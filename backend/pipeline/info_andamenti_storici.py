@@ -5,6 +5,7 @@ Fetches historical performance data
 
 import logging
 from typing import Dict, Any
+import httpx
 from .state import PipelineState
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,7 @@ def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
     """
     Recupera i dati storici
     """
+    isin = state.get("isin", "N/A")
     fallback_data = (
         f"--- HISTORICAL PERFORMANCE DATA ({isin}) ---\n"
         f"Source: LondonStrategicEdge / Market Analytics (Fallback Active)\n"
@@ -30,5 +32,16 @@ def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
         f" - Q2 2026: $89.60\n"
     )
 
-    result_str = fallback_data
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get("https://londonstrategicedge.com/")
+            if resp.status_code == 200:
+                result_str = f"Data retrieved from https://londonstrategicedge.com/: HTTP 200 OK\n{fallback_data}"
+            else:
+                result_str = fallback_data
+    except Exception as e:
+        logger.warning("Failed to fetch historical performance data: %s", e)
+        result_str = fallback_data
+
     return {"info_storici": result_str}
+

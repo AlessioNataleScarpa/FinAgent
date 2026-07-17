@@ -10,10 +10,20 @@ from .state import PipelineState
 logger = logging.getLogger(__name__)
 
 
+try:
+    from agents.joinAgent import JoinAgent
+except ImportError:
+    from backend.agents.joinAgent import JoinAgent
+
+from .state import PipelineState
+
+logger = logging.getLogger(__name__)
+
+
 def join_presenter_node(state: PipelineState) -> Dict[str, Any]:
     """
     Join Node: Concatenates presentation (OUT 1) and technical/news analysis (OUT TECNICA)
-    into a comprehensive final output (OUT FINALE).
+    into a comprehensive final output (OUT FINALE) using JoinAgent.
     """
     out1 = state.get("agent_1_out1", "")
     out_tech = state.get("agent_2_out_tech", "")
@@ -21,13 +31,7 @@ def join_presenter_node(state: PipelineState) -> Dict[str, Any]:
 
     logger.info("Executing JOIN node for final report output (ISIN: %s)", isin)
 
-    out_finale = (
-        f"# 🏆 REPORT COMPLETO DI ANALISI STRUMENTO FINANZIARIO ({isin})\n\n"
-        f"{out1}\n\n"
-        f"---\n\n"
-        f"{out_tech}\n\n"
-        f"---\n"
-        f"*Report generato automaticamente dalla Pipeline LangGraph.*"
-    )
+    out_finale = JoinAgent().run_sync(out1, out_tech)
 
     return {"out_finale": out_finale}
+

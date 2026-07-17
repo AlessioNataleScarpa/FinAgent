@@ -6,11 +6,14 @@ import pytest
 
 from agents.base import BaseAgent
 from agents.gatewayAgent import GatewayAgent
-try:
-    from schemas.chat import Message
-except ImportError:
-    from schemas.openai import Message
+from agents.joinAgent import JoinAgent
+from agents.presentationAgent import PresentationAgent
+from agents.registry import AVAILABLE_AGENTS
+from agents.technicalNewsAgent import TechnicalNewsAgent
+from schemas.chat import Message
+from schemas.presentation import PresentationAgentSchema, PresentationOutputSchema
 from schemas.routing import RouterIntentSchema
+from schemas.technical_news import TechnicalNewsAgentSchema, TechnicalNewsOutputSchema
 
 
 class DummyAgent(BaseAgent):
@@ -148,16 +151,9 @@ class TestGatewayAgent:
     def test_gateway_agent_initialization(self, mock_chat_google):
         agent = GatewayAgent()
         assert agent.model_id == "Gateway Agent"
-
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_mock_chat_google_generative_ai_runs_without_key(self, mock_chat_google):
-        """Verify ChatGoogleGenerativeAI is mocked and runs fast without GOOGLE_API_KEY."""
-        agent = GatewayAgent()
-        assert agent is not None
         mock_chat_google.assert_called()
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_non_routable_with_direct_response(self, mock_chat_google):
+    def test_non_routable_with_direct_response(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
@@ -171,8 +167,7 @@ class TestGatewayAgent:
         result = asyncio.run(agent.run(messages))
         assert result == "Ciao! Come posso aiutarti oggi?"
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_non_routable_without_direct_response(self, mock_chat_google):
+    def test_non_routable_without_direct_response(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
@@ -186,8 +181,7 @@ class TestGatewayAgent:
         result = asyncio.run(agent.run(messages))
         assert "Posso aiutarti solo con richieste relative a ETF e codici ISIN" in result
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_routable_etf_with_isin_in_llm_response(self, mock_chat_google):
+    def test_routable_etf_with_isin_in_llm_response(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
@@ -203,8 +197,7 @@ class TestGatewayAgent:
         assert "IE00B4L5Y983" in result
         assert "REPORT COMPLETO" in result
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_routable_etf_isin_regex_fallback(self, mock_chat_google):
+    def test_routable_etf_isin_regex_fallback(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
@@ -220,8 +213,7 @@ class TestGatewayAgent:
         assert "IE00B4L5Y983" in result
         assert "REPORT COMPLETO" in result
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_routable_etf_isin_previous_state_fallback(self, mock_chat_google):
+    def test_routable_etf_isin_previous_state_fallback(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
@@ -249,8 +241,7 @@ class TestGatewayAgent:
         assert "LU1681043599" in result
         assert "REPORT COMPLETO" in result
 
-    @patch("agents.base.ChatGoogleGenerativeAI")
-    def test_invalid_llm_string_response(self, mock_chat_google):
+    def test_invalid_llm_string_response(self):
         agent = GatewayAgent()
         mock_structured_llm = AsyncMock()
         mock_response = MagicMock()
@@ -261,3 +252,122 @@ class TestGatewayAgent:
         messages = [Message(role="user", content="Test prompt")]
         result = asyncio.run(agent.run(messages))
         assert "Errore interno del gateway" in result
+
+
+class TestPresentationAgent:
+    def test_presentation_agent_fallback(self):
+        agent = PresentationAgent()
+        out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
+        assert "IE00B4L5Y983" in out
+        assert "```mermaid" in out
+        assert "Allocazione Settoriale" in out
+
+    def test_presentation_agent_success(self):
+        agent = PresentationAgent()
+        mock_structured = MagicMock()
+        mock_structured.invoke.return_value = PresentationAgentSchema(
+            summary="ETF Summary Test",
+            sector_allocation_desc="Sector Tech 30%",
+            regional_allocation_desc="USA 80%",
+            mermaid_pie_chart="pie title Settori\n    \"Tech\" : 30",
+            mermaid_flowchart="graph TD\n    A -> B",
+        )
+
+        with patch.object(agent, "create_structured_llm", return_value=mock_structured):
+            out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
+            assert "ETF Summary Test" in out
+            assert "Sector Tech 30%" in out
+            assert "USA 80%" in out
+            assert "```mermaid" in out
+
+
+class TestTechnicalNewsAgent:
+    def test_technical_news_agent_fallback(self):
+        agent = TechnicalNewsAgent()
+        out = agent.run(isin="IE00B4L5Y983", prediction="PRED TEST", news="NEWS TEST")
+        assert "IE00B4L5Y983" in out
+        assert "PRED TEST" in out
+        assert "NEWS TEST" in out
+        assert "```mermaid" in out
+
+    def test_technical_news_agent_success(self):
+        agent = TechnicalNewsAgent()
+        mock_structured = MagicMock()
+        mock_structured.invoke.return_value = TechnicalNewsAgentSchema(
+            technical_summary="Quantitative prediction +10%",
+            news_impact_analysis="Positive Fed news",
+            sentiment_score="Bullish",
+            mermaid_impact_graph="graph LR\n    A -> B",
+            mermaid_gantt_timeline="gantt\n    title Forecast",
+        )
+
+        with patch.object(agent, "create_structured_llm", return_value=mock_structured):
+            out = agent.run(isin="IE00B4L5Y983", prediction="PRED TEST", news="NEWS TEST")
+            assert "Quantitative prediction +10%" in out
+            assert "Positive Fed news" in out
+            assert "Bullish" in out
+            assert "```mermaid" in out
+
+
+class TestNewAgentMethodsAndJoinAgent:
+    @pytest.mark.asyncio
+    async def test_run_presentation_async(self):
+        agent = PresentationAgent()
+        mock_structured = AsyncMock()
+        mock_structured.ainvoke.return_value = PresentationOutputSchema(
+            summary="Async Presentation Summary",
+            asset_allocation="Equity 100%",
+            sector_breakdown=["Tech", "Healthcare"],
+            regional_breakdown=["USA", "Europe"],
+            mermaid_chart="pie title Assets\n \"Tech\" : 50",
+        )
+        with patch.object(agent, "create_structured_llm", return_value=mock_structured):
+            result = await agent.run_presentation("Test info")
+            assert isinstance(result, PresentationOutputSchema)
+            assert result.summary == "Async Presentation Summary"
+
+    @pytest.mark.asyncio
+    async def test_run_technical_news_async(self):
+        agent = TechnicalNewsAgent()
+        mock_structured = AsyncMock()
+        mock_structured.ainvoke.return_value = TechnicalNewsOutputSchema(
+            technical_summary="Async Tech Summary",
+            news_impact_analysis="Positive news impact",
+            sentiment_score="Bullish",
+            mermaid_chart="graph LR\n A -> B",
+        )
+        with patch.object(agent, "create_structured_llm", return_value=mock_structured):
+            result = await agent.run_technical_news("News data", "Prediction data")
+            assert isinstance(result, TechnicalNewsOutputSchema)
+            assert result.technical_summary == "Async Tech Summary"
+
+    @pytest.mark.asyncio
+    async def test_join_agent_run_join_async(self):
+        agent = JoinAgent()
+        assert agent.model_id == "Join Agent"
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.return_value.content = "# FINAL SYNTHESIS REPORT"
+        with patch.object(agent, "create_llm", return_value=mock_llm):
+            res = await agent.run_join("Out 1 text", "Out tech text")
+            assert res == "# FINAL SYNTHESIS REPORT"
+
+    @pytest.mark.asyncio
+    async def test_join_agent_run_fallback(self):
+        agent = JoinAgent()
+        mock_llm = AsyncMock()
+        mock_llm.ainvoke.side_effect = Exception("LLM connection failed")
+        with patch.object(agent, "create_llm", return_value=mock_llm):
+            res = await agent.run_join("Out 1 text", "Out tech text")
+            assert "REPORT COMPLETO DI ANALISI STRUMENTO FINANZIARIO" in res
+            assert "Out 1 text" in res
+            assert "Out tech text" in res
+
+    def test_registry_has_all_agents(self):
+        assert "gatewayAgent" in AVAILABLE_AGENTS
+        assert "presentationAgent" in AVAILABLE_AGENTS
+        assert "technicalNewsAgent" in AVAILABLE_AGENTS
+        assert "joinAgent" in AVAILABLE_AGENTS
+        assert isinstance(AVAILABLE_AGENTS["joinAgent"], JoinAgent)
+
+
+

@@ -1,7 +1,7 @@
 from typing import Optional
 
 
-def build_gateway_system_prompt(previous_state_json: Optional[str]) -> str:
+def build_gateway_system_prompt(previous_state_json: Optional[str] = None) -> str:
     state_context = previous_state_json if previous_state_json else "{}"
 
     return f"""You are the IntentRouter, the gateway of an AI system specialized in ETFs (Exchange-Traded Funds).
