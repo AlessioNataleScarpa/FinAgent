@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from agents.base import BaseAgent
 from prompts import build_gateway_system_prompt
-from schemas.openai import Message
+from schemas.chat import Message
 from schemas.routing import RouterIntentSchema
 
 ISIN_PATTERN = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b", re.IGNORECASE)

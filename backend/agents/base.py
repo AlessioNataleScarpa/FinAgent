@@ -2,30 +2,24 @@ import os
 from abc import ABC, abstractmethod
 import json
 from typing import Callable, List, Optional
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-from langchain_openai import ChatOpenAI
-
-from schemas.openai import Message
+from schemas.chat import Message
 
 
 class BaseAgent(ABC):
     @staticmethod
-    def llm_base_url() -> str:
-        return os.getenv("OPENAI_API_BASE", "http://ollama:11434/v1")
-
-    @staticmethod
     def llm_model() -> str:
-        return os.getenv("OPENAI_MODEL", "phi3")
+        return os.getenv("GEMINI_MODEL", "gemma-4-31b-it")
 
     @staticmethod
-    def llm_api_key() -> str:
-        return os.getenv("OPENAI_API_KEY", "ollama")
+    def llm_api_key() -> Optional[str]:
+        return os.getenv("GOOGLE_API_KEY")
 
-    def create_llm(self) -> ChatOpenAI:
-        return ChatOpenAI(
-            base_url=self.llm_base_url(),
-            api_key=self.llm_api_key(),
+    def create_llm(self) -> ChatGoogleGenerativeAI:
+        return ChatGoogleGenerativeAI(
             model=self.llm_model(),
+            google_api_key=self.llm_api_key(),
             temperature=0.0,
         )
 

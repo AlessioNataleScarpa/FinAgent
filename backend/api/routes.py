@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 import time
 
 from agents.registry import AVAILABLE_AGENTS
-from schemas.openai import ChatCompletionRequest, ModelCard
+from schemas.chat import ChatCompletionRequest, ModelCard
 
 router = APIRouter()
 
