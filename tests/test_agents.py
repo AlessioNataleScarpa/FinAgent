@@ -200,11 +200,8 @@ class TestGatewayAgent:
 
         messages = [Message(role="user", content="Analizza l'ETF IE00B4L5Y983")]
         result = asyncio.run(agent.run(messages))
-        parsed = json.loads(result)
-        assert parsed["status"] == "accepted"
-        assert parsed["intent"] == "etf"
-        assert parsed["isin"] == "IE00B4L5Y983"
-        assert parsed["clean_query"] == "Analisi iShares Core MSCI World"
+        assert "IE00B4L5Y983" in result
+        assert "REPORT COMPLETO" in result
 
     @patch("agents.base.ChatGoogleGenerativeAI")
     def test_routable_etf_isin_regex_fallback(self, mock_chat_google):
@@ -220,9 +217,8 @@ class TestGatewayAgent:
 
         messages = [Message(role="user", content="Mostrami i dati per IE00B4L5Y983 per favore")]
         result = asyncio.run(agent.run(messages))
-        parsed = json.loads(result)
-        assert parsed["status"] == "accepted"
-        assert parsed["isin"] == "IE00B4L5Y983"
+        assert "IE00B4L5Y983" in result
+        assert "REPORT COMPLETO" in result
 
     @patch("agents.base.ChatGoogleGenerativeAI")
     def test_routable_etf_isin_previous_state_fallback(self, mock_chat_google):
@@ -250,9 +246,8 @@ class TestGatewayAgent:
         ]
 
         result = asyncio.run(agent.run(messages))
-        parsed = json.loads(result)
-        assert parsed["status"] == "accepted"
-        assert parsed["isin"] == "LU1681043599"
+        assert "LU1681043599" in result
+        assert "REPORT COMPLETO" in result
 
     @patch("agents.base.ChatGoogleGenerativeAI")
     def test_invalid_llm_string_response(self, mock_chat_google):

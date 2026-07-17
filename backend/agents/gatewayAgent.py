@@ -10,6 +10,11 @@ from prompts import build_gateway_system_prompt
 from schemas.chat import Message
 from schemas.routing import RouterIntentSchema
 
+try:
+    from pipeline.graph import graph
+except ImportError:
+    from backend.pipeline.graph import graph
+
 ISIN_PATTERN = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b", re.IGNORECASE)
 
 
@@ -50,18 +55,26 @@ class GatewayAgent(BaseAgent):
     def _build_system_prompt(self, previous_state_json: Optional[str]) -> str:
         return build_gateway_system_prompt(previous_state_json)
 
-    def _build_accepted_stub(
+    async def _build_accepted_stub(
         self,
         clean_query: Optional[str],
         isin: Optional[str],
         latest_user_message: str,
     ) -> str:
+        pipeline_input = {
+            "isin": isin or "",
+            "clean_query": clean_query or latest_user_message,
+        }
+        state = await graph.ainvoke(pipeline_input)
+        if isinstance(state, dict) and state.get("out_finale"):
+            return state["out_finale"]
+
         payload = {
             "status": "accepted",
             "intent": "etf",
             "isin": isin,
             "clean_query": clean_query or latest_user_message,
-            "message": "Richiesta ETF accettata. Pipeline di analisi non ancora collegata.",
+            "message": "Richiesta ETF accettata. Pipeline di analisi non ha restituito output.",
         }
         return json.dumps(payload, indent=2, ensure_ascii=False)
 
@@ -111,7 +124,7 @@ class GatewayAgent(BaseAgent):
             except json.JSONDecodeError:
                 pass
 
-        return self._build_accepted_stub(
+        return await self._build_accepted_stub(
             clean_query=intent_data.get("clean_query"),
             isin=isin,
             latest_user_message=latest_user_message,
