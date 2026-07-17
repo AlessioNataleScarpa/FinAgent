@@ -11,9 +11,9 @@ from agents.presentationAgent import PresentationAgent
 from agents.registry import AVAILABLE_AGENTS
 from agents.technicalNewsAgent import TechnicalNewsAgent
 from schemas.chat import Message
-from schemas.presentation import PresentationAgentSchema, PresentationOutputSchema
+from schemas.presentation import PresentationOutputSchema
 from schemas.routing import RouterIntentSchema
-from schemas.technical_news import TechnicalNewsAgentSchema, TechnicalNewsOutputSchema
+from schemas.technical_news import TechnicalNewsOutputSchema
 
 
 class DummyAgent(BaseAgent):
@@ -95,21 +95,6 @@ class TestBaseAgent:
 
         no_user_msgs = [Message(role="system", content="System prompt")]
         assert BaseAgent.extract_latest_user_message(no_user_msgs) == ""
-
-    def test_replace_latest_user_message(self):
-        messages = [
-            Message(role="system", content="System prompt"),
-            Message(role="user", content="First user prompt"),
-            Message(role="assistant", content="Assistant reply"),
-            Message(role="user", content="Latest user prompt"),
-        ]
-        updated = BaseAgent.replace_latest_user_message(messages, "Replaced prompt")
-        assert len(updated) == 4
-        assert updated[3].content == "Replaced prompt"
-        assert updated[1].content == "First user prompt"
-
-        no_user = [Message(role="system", content="System prompt")]
-        assert BaseAgent.replace_latest_user_message(no_user, "New prompt") == no_user
 
     def test_strip_code_fences(self):
         json_fenced = "```json\n{\"key\": \"val\"}\n```"
@@ -257,26 +242,27 @@ class TestGatewayAgent:
 class TestPresentationAgent:
     def test_presentation_agent_fallback(self):
         agent = PresentationAgent()
-        out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
-        assert "IE00B4L5Y983" in out
-        assert "```mermaid" in out
-        assert "Allocazione Settoriale" in out
+        with patch.object(agent, "create_structured_llm", side_effect=Exception("LLM unavailable")):
+            out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
+            assert "IE00B4L5Y983" in out
+            assert "```mermaid" in out
+            assert "Allocazione Settoriale" in out
 
     def test_presentation_agent_success(self):
         agent = PresentationAgent()
         mock_structured = MagicMock()
-        mock_structured.invoke.return_value = PresentationAgentSchema(
+        mock_structured.invoke.return_value = PresentationOutputSchema(
             summary="ETF Summary Test",
-            sector_allocation_desc="Sector Tech 30%",
-            regional_allocation_desc="USA 80%",
-            mermaid_pie_chart="pie title Settori\n    \"Tech\" : 30",
-            mermaid_flowchart="graph TD\n    A -> B",
+            asset_allocation="Equity 100%",
+            sector_breakdown=["Tech 30%"],
+            regional_breakdown=["USA 80%"],
+            mermaid_chart="pie title Settori\n    \"Tech\" : 30",
         )
 
         with patch.object(agent, "create_structured_llm", return_value=mock_structured):
             out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
             assert "ETF Summary Test" in out
-            assert "Sector Tech 30%" in out
+            assert "Tech 30%" in out
             assert "USA 80%" in out
             assert "```mermaid" in out
 
@@ -284,21 +270,21 @@ class TestPresentationAgent:
 class TestTechnicalNewsAgent:
     def test_technical_news_agent_fallback(self):
         agent = TechnicalNewsAgent()
-        out = agent.run(isin="IE00B4L5Y983", prediction="PRED TEST", news="NEWS TEST")
-        assert "IE00B4L5Y983" in out
-        assert "PRED TEST" in out
-        assert "NEWS TEST" in out
-        assert "```mermaid" in out
+        with patch.object(agent, "create_structured_llm", side_effect=Exception("LLM unavailable")):
+            out = agent.run(isin="IE00B4L5Y983", prediction="PRED TEST", news="NEWS TEST")
+            assert "IE00B4L5Y983" in out
+            assert "PRED TEST" in out
+            assert "NEWS TEST" in out
+            assert "```mermaid" in out
 
     def test_technical_news_agent_success(self):
         agent = TechnicalNewsAgent()
         mock_structured = MagicMock()
-        mock_structured.invoke.return_value = TechnicalNewsAgentSchema(
+        mock_structured.invoke.return_value = TechnicalNewsOutputSchema(
             technical_summary="Quantitative prediction +10%",
             news_impact_analysis="Positive Fed news",
             sentiment_score="Bullish",
-            mermaid_impact_graph="graph LR\n    A -> B",
-            mermaid_gantt_timeline="gantt\n    title Forecast",
+            mermaid_chart="graph LR\n    A -> B",
         )
 
         with patch.object(agent, "create_structured_llm", return_value=mock_structured):

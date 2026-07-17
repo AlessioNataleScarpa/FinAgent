@@ -4,7 +4,20 @@ import json
 from typing import Callable, List, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from schemas.chat import Message
+try:
+    from schemas.chat import Message
+except ImportError:
+    from backend.schemas.chat import Message
+
+
+class AwaitableString(str):
+    """String subclass that can be awaited in async contexts for API route compatibility."""
+
+    def __await__(self):
+        async def _coro():
+            return str(self)
+
+        return _coro().__await__()
 
 
 class BaseAgent(ABC):
@@ -39,20 +52,6 @@ class BaseAgent(ABC):
             (message.content for message in reversed(messages) if message.role == "user"),
             "",
         )
-
-    @staticmethod
-    def replace_latest_user_message(messages: List[Message], content: str) -> List[Message]:
-        updated_messages = list(messages)
-
-        for index in range(len(updated_messages) - 1, -1, -1):
-            if updated_messages[index].role == "user":
-                updated_messages[index] = Message(
-                    role=updated_messages[index].role,
-                    content=content,
-                )
-                return updated_messages
-
-        return updated_messages
 
     @staticmethod
     def strip_code_fences(content: str) -> str:

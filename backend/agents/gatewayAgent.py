@@ -5,10 +5,16 @@ from typing import List, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from agents.base import BaseAgent
-from prompts import build_gateway_system_prompt
-from schemas.chat import Message
-from schemas.routing import RouterIntentSchema
+try:
+    from agents.base import BaseAgent
+    from prompts import build_gateway_system_prompt
+    from schemas.chat import Message
+    from schemas.routing import RouterIntentSchema
+except ImportError:
+    from backend.agents.base import BaseAgent
+    from backend.prompts import build_gateway_system_prompt
+    from backend.schemas.chat import Message
+    from backend.schemas.routing import RouterIntentSchema
 
 try:
     from pipeline.graph import graph

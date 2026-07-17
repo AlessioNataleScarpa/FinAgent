@@ -49,7 +49,7 @@ class TestPipelineNodes:
         out1 = res["agent_1_out1"]
         assert "IE00B4L5Y983" in out1
         assert "```mermaid" in out1
-        assert "Allocazione Settoriale" in out1
+        assert "Dettagli Fondamentali" in out1
 
     def test_news_node(self):
         state: PipelineState = {"isin": "IE00B4L5Y983"}
@@ -166,17 +166,13 @@ class TestGatewayAgentPipelineIntegration:
     @pytest.mark.asyncio
     async def test_gateway_agent_runs_pipeline_for_routable_etf(self):
         agent = GatewayAgent()
-        mock_structured_llm = MagicMock()
-
-        async def mock_ainvoke(messages):
-            return RouterIntentSchema(
-                intent="etf",
-                is_routable=True,
-                isin="IE00B4L5Y983",
-                clean_query="Analizza ETF IE00B4L5Y983",
-            )
-
-        mock_structured_llm.ainvoke = mock_ainvoke
+        mock_structured_llm = AsyncMock()
+        mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
+            intent="etf",
+            is_routable=True,
+            isin="IE00B4L5Y983",
+            clean_query="Analizza ETF IE00B4L5Y983",
+        )
         agent.structured_llm = mock_structured_llm
 
         messages = [Message(role="user", content="Analizza ETF IE00B4L5Y983")]
@@ -189,17 +185,13 @@ class TestGatewayAgentPipelineIntegration:
     @pytest.mark.asyncio
     async def test_gateway_agent_pipeline_fallback_on_missing_out_finale(self):
         agent = GatewayAgent()
-        mock_structured_llm = MagicMock()
-
-        async def mock_ainvoke(messages):
-            return RouterIntentSchema(
-                intent="etf",
-                is_routable=True,
-                isin="IE00B4L5Y983",
-                clean_query="Analizza ETF IE00B4L5Y983",
-            )
-
-        mock_structured_llm.ainvoke = mock_ainvoke
+        mock_structured_llm = AsyncMock()
+        mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
+            intent="etf",
+            is_routable=True,
+            isin="IE00B4L5Y983",
+            clean_query="Analizza ETF IE00B4L5Y983",
+        )
         agent.structured_llm = mock_structured_llm
 
         with patch.object(graph, "ainvoke", new_callable=AsyncMock, return_value={}):
@@ -208,3 +200,4 @@ class TestGatewayAgentPipelineIntegration:
             parsed = json.loads(result)
             assert parsed["status"] == "accepted"
             assert parsed["isin"] == "IE00B4L5Y983"
+

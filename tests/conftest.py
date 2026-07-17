@@ -44,24 +44,6 @@ def mock_google_ai():
 
         def _get_dummy_schema_instance():
             schema_name = getattr(schema, "__name__", "")
-            if schema_name == "PresentationAgentSchema":
-                from schemas.presentation import PresentationAgentSchema
-                return PresentationAgentSchema(
-                    summary="Test summary for IE00B4L5Y983 LU1681043599",
-                    sector_allocation_desc="Test sectors",
-                    regional_allocation_desc="Test regions",
-                    mermaid_pie_chart="pie title Chart",
-                    mermaid_flowchart="graph TD\n A-->B",
-                )
-            if schema_name == "TechnicalNewsAgentSchema":
-                from schemas.technical_news import TechnicalNewsAgentSchema
-                return TechnicalNewsAgentSchema(
-                    technical_summary="PREDICTION DATA PRED TEST Test tech for IE00B4L5Y983 LU1681043599",
-                    news_impact_analysis="NEWS DATA NEWS TEST Test news impact",
-                    sentiment_score="Bullish",
-                    mermaid_impact_graph="graph TD\n A-->B",
-                    mermaid_gantt_timeline="gantt\n title Timeline",
-                )
             if schema_name == "PresentationOutputSchema":
                 from schemas.presentation import PresentationOutputSchema
                 return PresentationOutputSchema(
@@ -74,8 +56,8 @@ def mock_google_ai():
             if schema_name == "TechnicalNewsOutputSchema":
                 from schemas.technical_news import TechnicalNewsOutputSchema
                 return TechnicalNewsOutputSchema(
-                    technical_summary="PREDICTION DATA Test tech for IE00B4L5Y983 LU1681043599",
-                    news_impact_analysis="NEWS DATA Test news impact",
+                    technical_summary="PREDICTION DATA PRED TEST Test tech for IE00B4L5Y983 LU1681043599",
+                    news_impact_analysis="NEWS DATA NEWS TEST Test news impact",
                     sentiment_score="Bullish",
                     mermaid_chart="graph TD\n A-->B",
                 )
@@ -95,9 +77,5 @@ def mock_google_ai():
     mock_instance.with_structured_output.side_effect = mock_with_structured_output
 
     with patch("agents.base.ChatGoogleGenerativeAI", return_value=mock_instance) as mock_class_base, \
-         patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=mock_instance) as mock_class_genai:
+         patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=mock_instance):
         yield mock_class_base
-
-
-
-

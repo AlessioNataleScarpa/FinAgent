@@ -14,10 +14,4 @@ class PresentationOutputSchema(BaseModel):
     )
 
 
-class PresentationAgentSchema(BaseModel):
-    summary: str = Field(..., description="Overview of ETF object, provider, index tracked")
-    sector_allocation_desc: str = Field(..., description="Sector allocation description")
-    regional_allocation_desc: str = Field(..., description="Regional allocation description")
-    mermaid_pie_chart: str = Field(..., description="Valid Mermaid pie chart string")
-    mermaid_flowchart: str = Field(..., description="Valid Mermaid flowchart string")
 

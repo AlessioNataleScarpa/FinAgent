@@ -4,15 +4,15 @@ from typing import List, Optional, Union
 from langchain_core.messages import HumanMessage, SystemMessage
 
 try:
-    from agents.base import BaseAgent
+    from agents.base import AwaitableString, BaseAgent
     from prompts.presentation import build_presentation_agent_prompt
     from schemas.chat import Message
-    from schemas.presentation import PresentationAgentSchema, PresentationOutputSchema
+    from schemas.presentation import PresentationOutputSchema
 except ImportError:
-    from backend.agents.base import BaseAgent
+    from backend.agents.base import AwaitableString, BaseAgent
     from backend.prompts.presentation import build_presentation_agent_prompt
     from backend.schemas.chat import Message
-    from backend.schemas.presentation import PresentationAgentSchema, PresentationOutputSchema
+    from backend.schemas.presentation import PresentationOutputSchema
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class PresentationAgent(BaseAgent):
         return cleaned
 
     def _build_fallback_markdown(self, isin: str, info_presentazione: str) -> str:
-        return (
+        return AwaitableString(
             f"# 📊 PRESENTAZIONE STRUMENTO (OUT 1)\n\n"
             f"**ISIN Analizzato:** `{isin}`\n\n"
             f"### 📋 Dettagli Fondamentali\n"
@@ -100,79 +100,37 @@ class PresentationAgent(BaseAgent):
             isin = self.extract_latest_user_message(messages)
 
         try:
-            structured_llm = self.create_structured_llm(PresentationAgentSchema)
+            structured_llm = self.create_structured_llm(PresentationOutputSchema)
             prompt_content = build_presentation_agent_prompt(isin, info_presentazione)
             response = structured_llm.invoke([
                 SystemMessage(content=prompt_content),
                 HumanMessage(content=f"Genera la presentazione per ISIN: {isin}"),
             ])
 
-            if isinstance(response, PresentationAgentSchema):
+            if isinstance(response, PresentationOutputSchema):
                 data = response
             elif hasattr(response, "model_dump"):
-                data = PresentationAgentSchema(**response.model_dump())
+                data = PresentationOutputSchema(**response.model_dump())
             elif isinstance(response, dict):
-                data = PresentationAgentSchema(**response)
-            elif isinstance(response, PresentationOutputSchema):
-                data = response
+                data = PresentationOutputSchema(**response)
             else:
                 raise ValueError("Unexpected response type from structured LLM")
 
-            if isinstance(data, PresentationOutputSchema):
-                sectors = ", ".join(data.sector_breakdown) if isinstance(data.sector_breakdown, list) else data.sector_breakdown
-                regions = ", ".join(data.regional_breakdown) if isinstance(data.regional_breakdown, list) else data.regional_breakdown
-                chart = self._format_mermaid(data.mermaid_chart, f"pie title Allocazione ISIN {isin}")
-                return (
-                    f"# 📊 PRESENTAZIONE STRUMENTO (OUT 1)\n\n"
-                    f"**ISIN Analizzato:** `{isin}`\n\n"
-                    f"### 📋 Dettagli Fondamentali\n{data.summary}\n\n"
-                    f"### 💼 Allocazione Asset\n{data.asset_allocation}\n\n"
-                    f"### 📊 Ripartizione Settoriale\n{sectors}\n\n"
-                    f"### 🌐 Ripartizione Geografica\n{regions}\n\n"
-                    f"### 🌐 Struttura e Allocazione (Mermaid Diagram)\n\n"
-                    f"```mermaid\n{chart}\n```\n"
-                )
-
-            pie_chart = self._format_mermaid(
-                data.mermaid_pie_chart,
-                f"pie title Allocazione Settoriale ISIN {isin}\n"
-                f'    "Information Tech" : 23.5\n'
-                f'    "Financials" : 15.2\n'
-                f'    "Healthcare" : 12.1\n'
-                f'    "Industrials" : 11.0\n'
-                f'    "Consumer Disc" : 10.4\n'
-                f'    "Communication" : 7.5\n'
-                f'    "Altri Settori" : 20.3',
-            )
-
-            flowchart = self._format_mermaid(
-                data.mermaid_flowchart,
-                f"graph TD\n"
-                f"    A[{isin}] --> B[Mercati Sviluppati]\n"
-                f"    B --> C[USA - 70.1%]\n"
-                f"    B --> D[Giappone - 6.2%]\n"
-                f"    B --> E[Europa / UK - 10.0%]\n"
-                f"    B --> F[Altri - 13.7%]",
-            )
-
-            out_markdown = (
+            sectors = ", ".join(data.sector_breakdown) if isinstance(data.sector_breakdown, list) else data.sector_breakdown
+            regions = ", ".join(data.regional_breakdown) if isinstance(data.regional_breakdown, list) else data.regional_breakdown
+            chart = self._format_mermaid(data.mermaid_chart, f"pie title Allocazione ISIN {isin}")
+            return AwaitableString(
                 f"# 📊 PRESENTAZIONE STRUMENTO (OUT 1)\n\n"
                 f"**ISIN Analizzato:** `{isin}`\n\n"
-                f"### 📋 Dettagli Fondamentali\n"
-                f"{data.summary}\n\n"
-                f"### 📊 Allocazione Settoriale\n"
-                f"{data.sector_allocation_desc}\n\n"
-                f"### 🌐 Allocazione Geografica\n"
-                f"{data.regional_allocation_desc}\n\n"
+                f"### 📋 Dettagli Fondamentali\n{data.summary}\n\n"
+                f"### 💼 Allocazione Asset\n{data.asset_allocation}\n\n"
+                f"### 📊 Ripartizione Settoriale\n{sectors}\n\n"
+                f"### 🌐 Ripartizione Geografica\n{regions}\n\n"
                 f"### 🌐 Struttura e Allocazione (Mermaid Diagram)\n\n"
-                f"```mermaid\n"
-                f"{pie_chart}\n"
-                f"```\n\n"
-                f"```mermaid\n"
-                f"{flowchart}\n"
-                f"```\n"
+                f"```mermaid\n{chart}\n```\n"
             )
-            return out_markdown
+
+
         except Exception as e:
             logger.warning(
                 "PresentationAgent LLM generation failed or unavailable: %s. Falling back to default markdown.",

@@ -4,15 +4,15 @@ from typing import List, Optional, Union
 from langchain_core.messages import HumanMessage, SystemMessage
 
 try:
-    from agents.base import BaseAgent
+    from agents.base import AwaitableString, BaseAgent
     from prompts.technical_news import build_technical_news_agent_prompt
     from schemas.chat import Message
-    from schemas.technical_news import TechnicalNewsAgentSchema, TechnicalNewsOutputSchema
+    from schemas.technical_news import TechnicalNewsOutputSchema
 except ImportError:
-    from backend.agents.base import BaseAgent
+    from backend.agents.base import AwaitableString, BaseAgent
     from backend.prompts.technical_news import build_technical_news_agent_prompt
     from backend.schemas.chat import Message
-    from backend.schemas.technical_news import TechnicalNewsAgentSchema, TechnicalNewsOutputSchema
+    from backend.schemas.technical_news import TechnicalNewsOutputSchema
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class TechnicalNewsAgent(BaseAgent):
         return cleaned
 
     def _build_fallback_markdown(self, isin: str, prediction: str, news: str) -> str:
-        return (
+        return AwaitableString(
             f"# 📈 ANALISI TECNICA E CONFRONTO NEWS (OUT TECNICA)\n\n"
             f"### 🔮 Previsione Quantitativa (OUT 2)\n"
             f"{prediction}\n\n"
@@ -117,72 +117,32 @@ class TechnicalNewsAgent(BaseAgent):
             isin = self.extract_latest_user_message(messages)
 
         try:
-            structured_llm = self.create_structured_llm(TechnicalNewsAgentSchema)
+            structured_llm = self.create_structured_llm(TechnicalNewsOutputSchema)
             prompt_content = build_technical_news_agent_prompt(isin, prediction, news)
             response = structured_llm.invoke([
                 SystemMessage(content=prompt_content),
                 HumanMessage(content=f"Genera l'analisi tecnica e news per ISIN: {isin}"),
             ])
 
-            if isinstance(response, TechnicalNewsAgentSchema):
+            if isinstance(response, TechnicalNewsOutputSchema):
                 data = response
             elif hasattr(response, "model_dump"):
-                data = TechnicalNewsAgentSchema(**response.model_dump())
+                data = TechnicalNewsOutputSchema(**response.model_dump())
             elif isinstance(response, dict):
-                data = TechnicalNewsAgentSchema(**response)
-            elif isinstance(response, TechnicalNewsOutputSchema):
-                data = response
+                data = TechnicalNewsOutputSchema(**response)
             else:
                 raise ValueError("Unexpected response type from structured LLM")
 
-            if isinstance(data, TechnicalNewsOutputSchema):
-                chart = self._format_mermaid(data.mermaid_chart, "graph LR\n    A -> B")
-                return (
-                    f"# 📈 ANALISI TECNICA E CONFRONTO NEWS (OUT TECNICA)\n\n"
-                    f"### 🔮 Previsione Quantitativa (OUT 2)\n{data.technical_summary}\n\n"
-                    f"### 📰 Notizie di Mercato Rilevanti e Impatto\n"
-                    f"**Sentiment Generale:** {data.sentiment_score}\n\n"
-                    f"{data.news_impact_analysis}\n\n"
-                    f"### 📊 Diagramma Mermaid Previsionale e Impatto Notizie\n\n"
-                    f"```mermaid\n{chart}\n```\n"
-                )
-
-            impact_graph = self._format_mermaid(
-                data.mermaid_impact_graph,
-                f"graph LR\n"
-                f"    N1[Notizie Macro Positive] -->|Spinta Rialzista| P[Trend Previsto: +8.5%]\n"
-                f"    N2[Rischi Geopolitici] -->|Resistenza Volatilità| P\n"
-                f"    H[Storico CAGR 11.5%] -->|Base Quantitativa| P\n"
-                f"    P --> OUT[Target Price 12 Mesi: Growth Zone]",
-            )
-
-            gantt_timeline = self._format_mermaid(
-                data.mermaid_gantt_timeline,
-                f"gantt\n"
-                f"    title Orizzonte temporale di previsione ({isin})\n"
-                f"    dateFormat YYYY-MM-DD\n"
-                f"    section Fasi Previsione\n"
-                f"    Accumulazione iniziale    :a1, 2026-07-01, 30d\n"
-                f"    Crescita Moderata          :after a1, 60d\n"
-                f"    Target Growth Achieved     :after a2, 90d",
-            )
-
-            out_markdown = (
+            chart = self._format_mermaid(data.mermaid_chart, "graph LR\n    A -> B")
+            return AwaitableString(
                 f"# 📈 ANALISI TECNICA E CONFRONTO NEWS (OUT TECNICA)\n\n"
-                f"### 🔮 Previsione Quantitativa (OUT 2)\n"
-                f"{data.technical_summary}\n\n"
+                f"### 🔮 Previsione Quantitativa (OUT 2)\n{data.technical_summary}\n\n"
                 f"### 📰 Notizie di Mercato Rilevanti e Impatto\n"
                 f"**Sentiment Generale:** {data.sentiment_score}\n\n"
                 f"{data.news_impact_analysis}\n\n"
                 f"### 📊 Diagramma Mermaid Previsionale e Impatto Notizie\n\n"
-                f"```mermaid\n"
-                f"{impact_graph}\n"
-                f"```\n\n"
-                f"```mermaid\n"
-                f"{gantt_timeline}\n"
-                f"```\n"
+                f"```mermaid\n{chart}\n```\n"
             )
-            return out_markdown
         except Exception as e:
             logger.warning(
                 "TechnicalNewsAgent LLM generation failed or unavailable: %s. Falling back to default markdown.",

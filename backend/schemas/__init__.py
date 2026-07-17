@@ -1,8 +1,8 @@
 from .chat import ChatCompletionRequest, Message, ModelCard
 from .final_report import FinalReportSchema
-from .presentation import PresentationAgentSchema, PresentationOutputSchema
+from .presentation import PresentationOutputSchema
 from .routing import RouterIntentSchema
-from .technical_news import TechnicalNewsAgentSchema, TechnicalNewsOutputSchema
+from .technical_news import TechnicalNewsOutputSchema
 
 __all__ = [
     "Message",
@@ -10,9 +10,8 @@ __all__ = [
     "ModelCard",
     "RouterIntentSchema",
     "PresentationOutputSchema",
-    "PresentationAgentSchema",
     "TechnicalNewsOutputSchema",
-    "TechnicalNewsAgentSchema",
     "FinalReportSchema",
 ]
+
 
