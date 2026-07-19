@@ -1,7 +1,10 @@
 import os
 from abc import ABC, abstractmethod
+import ast
 import json
-from typing import Callable, List, Optional
+import re
+from typing import Any, Callable, List, Optional
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 try:
@@ -34,6 +37,8 @@ class BaseAgent(ABC):
             model=self.llm_model(),
             google_api_key=self.llm_api_key(),
             temperature=0.0,
+            timeout=45.0,
+            max_retries=1,
         )
 
     def create_structured_llm(self, schema, fallback_to_plain: bool = False):
@@ -64,6 +69,80 @@ class BaseAgent(ABC):
             return normalized_content.split("```", 1)[1].split("```", 1)[0].strip()
 
         return normalized_content
+
+    @staticmethod
+    def _text_from_part(part: Any) -> str:
+        if part is None:
+            return ""
+        if isinstance(part, str):
+            return part
+        if isinstance(part, dict):
+            part_type = str(part.get("type") or part.get("kind") or "").lower()
+            if part_type in {"thinking", "thought", "reasoning"}:
+                return ""
+            for key in ("text", "content", "output_text"):
+                value = part.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            return ""
+        for attr in ("text", "content"):
+            value = getattr(part, attr, None)
+            if isinstance(value, str) and value.strip():
+                part_type = str(getattr(part, "type", "") or "").lower()
+                if part_type in {"thinking", "thought", "reasoning"}:
+                    return ""
+                return value
+        return ""
+
+    @classmethod
+    def normalize_llm_content(cls, content: Any) -> str:
+        """
+        Normalize Gemini/Gemma responses to clean Markdown text.
+        Drops thinking/reasoning blocks that some models return as structured parts.
+        """
+        if content is None:
+            return ""
+
+        if isinstance(content, list):
+            texts = [cls._text_from_part(part) for part in content]
+            joined = "\n\n".join(t.strip() for t in texts if t and t.strip())
+            return joined.strip()
+
+        if not isinstance(content, str):
+            if hasattr(content, "content"):
+                return cls.normalize_llm_content(getattr(content, "content"))
+            content = str(content)
+
+        text = content.strip()
+        if not text:
+            return ""
+
+        # Model sometimes stringifies a list of {type: thinking|text, ...}
+        if text.startswith("[{") and ("'type'" in text or '"type"' in text):
+            try:
+                parsed = ast.literal_eval(text)
+                if isinstance(parsed, list):
+                    return cls.normalize_llm_content(parsed)
+            except (SyntaxError, ValueError, MemoryError):
+                pass
+
+        # Fallback regex extraction for stringified thinking payloads
+        if "'type': 'thinking'" in text or '"type": "thinking"' in text:
+            matches = re.findall(
+                r"['\"]type['\"]\s*:\s*['\"]text['\"]\s*,\s*['\"]text['\"]\s*:\s*['\"](.*?)['\"]\s*\}",
+                text,
+                flags=re.DOTALL,
+            )
+            if matches:
+                recovered = matches[-1]
+                recovered = (
+                    recovered.replace("\\n", "\n")
+                    .replace("\\'", "'")
+                    .replace('\\"', '"')
+                )
+                return recovered.strip()
+
+        return text
 
     @staticmethod
     def extract_previous_assistant_state(

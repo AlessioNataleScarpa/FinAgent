@@ -350,6 +350,7 @@ class TestNewAgentMethodsAndJoinAgent:
 
     def test_registry_has_all_agents(self):
         assert "gatewayAgent" in AVAILABLE_AGENTS
+        assert "conversationAgent" in AVAILABLE_AGENTS
         assert "presentationAgent" in AVAILABLE_AGENTS
         assert "technicalNewsAgent" in AVAILABLE_AGENTS
         assert "joinAgent" in AVAILABLE_AGENTS

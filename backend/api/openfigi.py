@@ -4,6 +4,9 @@ from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Avoid duplicate OpenFIGI calls across parallel LangGraph branches.
+_TICKER_CACHE: Dict[str, Optional[str]] = {}
+
 def isin_to_ticker(isin: str, api_key: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Converte un ISIN in una lista di Ticker corrispondenti utilizzando l'API di OpenFIGI.
@@ -48,18 +51,38 @@ def isin_to_ticker(isin: str, api_key: Optional[str] = None) -> List[Dict[str, A
 
 def get_best_ticker(isin: str, preferred_exchange: str = "US", api_key: Optional[str] = None) -> Optional[str]:
     """
-    Funzione di utilità per estrarre direttamente un singolo ticker da un ISIN.
-    Si può specificare un exchange preferito (es. 'US', 'IT', 'LN').
+    Estrae un ticker da un ISIN, privilegiando exchange liquidi per ETF (L/LN/MI/US).
     """
-    results = isin_to_ticker(isin, api_key)
-    if not results:
+    key = (isin or "").strip().upper()
+    if not key:
         return None
-        
-    # Cerca prima una corrispondenza esatta con l'exchange preferito
-    if preferred_exchange:
+    if key in _TICKER_CACHE:
+        return _TICKER_CACHE[key]
+
+    results = isin_to_ticker(key, api_key)
+    if not results:
+        _TICKER_CACHE[key] = None
+        return None
+
+    preferred = [preferred_exchange, "L", "LN", "MI", "US", "GY", "NA"]
+    ticker: Optional[str] = None
+    for exch in preferred:
+        if not exch:
+            continue
         for res in results:
-            if res.get('exchCode') == preferred_exchange:
-                return res.get('ticker')
-                
-    # Se non trova l'exchange preferito, restituisce il primo ticker disponibile
-    return results[0].get('ticker')
+            if res.get("exchCode") == exch and res.get("ticker"):
+                ticker = res.get("ticker")
+                # Yahoo often needs a suffix for non-US listings.
+                if exch in {"L", "LN"} and "." not in ticker:
+                    ticker = f"{ticker}.L"
+                elif exch == "MI" and "." not in ticker:
+                    ticker = f"{ticker}.MI"
+                break
+        if ticker:
+            break
+
+    if not ticker:
+        ticker = results[0].get("ticker")
+
+    _TICKER_CACHE[key] = ticker
+    return ticker

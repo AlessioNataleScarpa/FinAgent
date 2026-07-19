@@ -1,54 +1,104 @@
 """
 Graph Construction for ETF Analysis Pipeline.
-Constructs and compiles StateGraph from langgraph.graph (StateGraph, START, END).
-Connects FORK (ISIN -> parallel info_presentazione, news, info_andamenti_storici)
-and JOIN (out_1 and out_tech -> join_presenter -> END).
+
+Flow:
+  START
+    └─ route_mode
+         ├─ conversation ──────────────────────────────────────────────→ END
+         └─ start_analysis
+              ├─ info_presentazione → agent_1 → composition_charts ────┐
+              ├─ news ──────────────────────────┐                      │
+              └─ info_andamenti_storici ┬→ predict ┴→ agent_2 → sentiment_charts
+                                        └→ timeline_charts ────────────┼→ join_presenter → save_memory → END
 """
 
-from langgraph.graph import StateGraph, START, END
-from .state import PipelineState
-from .info_presentazione import fetch_info_presentazione
-from .agent_1 import generate_agent_1_out
-from .news import fetch_news
-from .info_andamenti_storici import fetch_info_andamenti_storici
-from .predict import predict_node
-from .agent_2 import generate_agent_2_out
-from .join_presenter import join_presenter_node
+from typing import Literal
 
-# Instantiate StateGraph with PipelineState
+from langgraph.graph import END, START, StateGraph
+
+from .agent_1 import generate_agent_1_out
+from .agent_2 import generate_agent_2_out
+from .composition_charts import composition_charts_node
+from .conversation import conversation_node
+from .info_andamenti_storici import fetch_info_andamenti_storici
+from .info_presentazione import fetch_info_presentazione
+from .join_presenter import join_presenter_node
+from .news import fetch_news
+from .predict import predict_node
+from .save_memory import save_memory_node
+from .sentiment_charts import sentiment_charts_node
+from .state import PipelineState
+from .timeline_charts import timeline_charts_node
+
+
+def route_mode(state: PipelineState) -> Literal["conversation", "full_analysis"]:
+    mode = state.get("mode") or "full_analysis"
+    if mode == "conversation":
+        return "conversation"
+    return "full_analysis"
+
+
+def start_analysis_node(state: PipelineState) -> dict:
+    """Passthrough hub that fans out into the parallel analysis branches."""
+    return {}
+
+
 builder = StateGraph(PipelineState)
 
-# Add nodes to graph
+# Entry routing
+builder.add_node("start_analysis", start_analysis_node)
+builder.add_node("conversation", conversation_node)
+
+# Full analysis nodes
 builder.add_node("info_presentazione", fetch_info_presentazione)
 builder.add_node("agent_1", generate_agent_1_out)
+builder.add_node("composition_charts", composition_charts_node)
 builder.add_node("news", fetch_news)
 builder.add_node("info_andamenti_storici", fetch_info_andamenti_storici)
 builder.add_node("predict", predict_node)
+builder.add_node("timeline_charts", timeline_charts_node)
 builder.add_node("agent_2", generate_agent_2_out)
+builder.add_node("sentiment_charts", sentiment_charts_node)
 builder.add_node("join_presenter", join_presenter_node)
+builder.add_node("save_memory", save_memory_node)
 
-# Define FORK from START into parallel branches
-builder.add_edge(START, "info_presentazione")
-builder.add_edge(START, "news")
-builder.add_edge(START, "info_andamenti_storici")
+# Conditional entry: conversation vs full pipeline
+builder.add_conditional_edges(
+    START,
+    route_mode,
+    {
+        "conversation": "conversation",
+        "full_analysis": "start_analysis",
+    },
+)
+builder.add_edge("conversation", END)
 
-# Sequential flow for branch 1: info_presentazione -> agent_1
+# Parallel data collection
+builder.add_edge("start_analysis", "info_presentazione")
+builder.add_edge("start_analysis", "news")
+builder.add_edge("start_analysis", "info_andamenti_storici")
+
+# Presentation branch → composition pies
 builder.add_edge("info_presentazione", "agent_1")
+builder.add_edge("agent_1", "composition_charts")
 
-# Sequential flow for branch 3: info_andamenti_storici -> predict
+# Historical branch → predict + timeline chart
 builder.add_edge("info_andamenti_storici", "predict")
+builder.add_edge("info_andamenti_storici", "timeline_charts")
 
-# agent_2 waits for both news and predict nodes
+# Technical branch
 builder.add_edge("news", "agent_2")
 builder.add_edge("predict", "agent_2")
+builder.add_edge("agent_2", "sentiment_charts")
 
-# JOIN: join_presenter waits for both agent_1 (OUT 1) and agent_2 (OUT TECNICA)
-builder.add_edge("agent_1", "join_presenter")
-builder.add_edge("agent_2", "join_presenter")
+# Join waits for all chart/analysis modules
+builder.add_edge("composition_charts", "join_presenter")
+builder.add_edge("timeline_charts", "join_presenter")
+builder.add_edge("sentiment_charts", "join_presenter")
 
-# Final transition: join_presenter -> END
-builder.add_edge("join_presenter", END)
+# Persist memory then end
+builder.add_edge("join_presenter", "save_memory")
+builder.add_edge("save_memory", END)
 
-# Compile graph
 graph = builder.compile()
 app = graph

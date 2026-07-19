@@ -116,13 +116,17 @@ class TestPipelineNodes:
             "isin": "IE00B4L5Y983",
             "agent_1_out1": "PRESENTATION OUT 1",
             "agent_2_out_tech": "TECHNICAL OUT 2",
+            "composition_charts": "```mermaid\npie title Test\n    \"A\" : 1\n```",
+            "timeline_charts": "```mermaid\nxychart-beta\n    line [1, 2, 3]\n```",
+            "sentiment_charts": "```mermaid\ngraph LR\n    A --> B\n```",
         }
         res = join_presenter_node(state)
         assert "out_finale" in res
         out_finale = res["out_finale"]
-        assert "REPORT COMPLETO" in out_finale
         assert "PRESENTATION OUT 1" in out_finale
         assert "TECHNICAL OUT 2" in out_finale
+        assert "```mermaid" in out_finale
+        assert "IE00B4L5Y983" in out_finale or "Report" in out_finale
 
 
 class TestStateGraphExecution:
@@ -130,6 +134,7 @@ class TestStateGraphExecution:
 
     def test_stategraph_sync_execution(self):
         initial_state: PipelineState = {
+            "mode": "full_analysis",
             "isin": "IE00B4L5Y983",
             "clean_query": "Analizza ETF IE00B4L5Y983",
         }
@@ -145,11 +150,16 @@ class TestStateGraphExecution:
         assert "out_finale" in result
 
         assert "IE00B4L5Y983" in result["out_finale"]
-        assert "REPORT COMPLETO DI ANALISI STRUMENTO FINANZIARIO" in result["out_finale"]
+        assert "```mermaid" in result["out_finale"]
+        assert result.get("memory_saved") is True
+        assert result.get("composition_charts")
+        assert result.get("timeline_charts")
+        assert result.get("sentiment_charts")
 
     @pytest.mark.asyncio
     async def test_stategraph_async_execution(self):
         initial_state: PipelineState = {
+            "mode": "full_analysis",
             "isin": "LU1681043599",
             "clean_query": "Analizza ETF LU1681043599",
         }

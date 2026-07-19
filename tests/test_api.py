@@ -17,6 +17,7 @@ class TestAPIRoutes:
 
         model_ids = [m["id"] for m in data["data"]]
         assert "gatewayAgent" in model_ids
+        assert "conversationAgent" in model_ids
 
     @patch.dict(AVAILABLE_AGENTS)
     def test_chat_completions_success(self):

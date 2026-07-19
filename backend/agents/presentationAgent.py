@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -8,11 +9,13 @@ try:
     from prompts.presentation import build_presentation_agent_prompt
     from schemas.chat import Message
     from schemas.presentation import PresentationOutputSchema
+    from utils.flags import pipeline_use_llm
 except ImportError:
     from backend.agents.base import AwaitableString, BaseAgent
     from backend.prompts.presentation import build_presentation_agent_prompt
     from backend.schemas.chat import Message
     from backend.schemas.presentation import PresentationOutputSchema
+    from backend.utils.flags import pipeline_use_llm
 
 logger = logging.getLogger(__name__)
 
@@ -33,37 +36,57 @@ class PresentationAgent(BaseAgent):
             return default_diagram
         return cleaned
 
+    @staticmethod
+    def _parse_profile(info_presentazione: str) -> Dict[str, Any]:
+        try:
+            payload = json.loads(info_presentazione or "{}")
+        except json.JSONDecodeError:
+            return {"raw": info_presentazione}
+        profile = payload.get("Profile") if isinstance(payload, dict) else {}
+        if not isinstance(profile, dict):
+            profile = {}
+        return {
+            "isin": payload.get("ISIN") if isinstance(payload, dict) else None,
+            "ticker": payload.get("Ticker") if isinstance(payload, dict) else None,
+            "profile": profile,
+            "raw": info_presentazione,
+        }
+
     def _build_fallback_markdown(self, isin: str, info_presentazione: str) -> str:
-        return AwaitableString(
-            f"# 📊 PRESENTAZIONE STRUMENTO (OUT 1)\n\n"
-            f"**ISIN Analizzato:** `{isin}`\n\n"
-            f"### 📋 Dettagli Fondamentali\n"
-            f"{info_presentazione}\n\n"
-            f"### 🌐 Struttura e Allocazione (Mermaid Diagram)\n\n"
-            f"```mermaid\n"
-            f"pie title Allocazione Settoriale ISIN {isin}\n"
-            f'    "Information Tech" : 23.5\n'
-            f'    "Financials" : 15.2\n'
-            f'    "Healthcare" : 12.1\n'
-            f'    "Industrials" : 11.0\n'
-            f'    "Consumer Disc" : 10.4\n'
-            f'    "Communication" : 7.5\n'
-            f'    "Altri Settori" : 20.3\n'
-            f"```\n\n"
-            f"```mermaid\n"
-            f"graph TD\n"
-            f"    A[{isin}] --> B[Mercati Sviluppati]\n"
-            f"    B --> C[USA - 70.1%]\n"
-            f"    B --> D[Giappone - 6.2%]\n"
-            f"    B --> E[Europa / UK - 10.0%]\n"
-            f"    B --> F[Altri - 13.7%]\n"
-            f"```\n"
-        )
+        parsed = self._parse_profile(info_presentazione)
+        profile = parsed.get("profile") or {}
+        ticker = parsed.get("ticker") or "N/D"
+        name = profile.get("name") or "ETF"
+        description = profile.get("description") or "Descrizione non disponibile."
+        if isinstance(description, str) and len(description) > 700:
+            description = description[:700].rstrip() + "..."
+
+        lines = [
+            f"# Presentazione strumento",
+            "",
+            f"**ISIN:** `{isin}`  ",
+            f"**Ticker:** `{ticker}`  ",
+            f"**Nome:** {name}",
+            "",
+            "### Dettagli fondamentali",
+            f"- Categoria: {profile.get('category', 'N/A')}",
+            f"- Exchange: {profile.get('exchange', 'N/A')}",
+            f"- Valuta: {profile.get('currency', 'N/A')}",
+            f"- Previous close: {profile.get('previousClose', 'N/A')}",
+            f"- AUM / Market cap: {profile.get('totalAssets', profile.get('marketCap', 'N/A'))}",
+            f"- Yield: {profile.get('yield', 'N/A')}",
+            "",
+            "### Descrizione",
+            description,
+            "",
+            "_I grafici di composizione sono generati dal nodo `composition_charts`._",
+        ]
+        return AwaitableString("\n".join(lines))
 
     async def run_presentation(self, info_presentazione: str) -> Union[PresentationOutputSchema, str]:
-        """
-        Runs the presentation agent asynchronously using PresentationOutputSchema or fallback LLM.
-        """
+        if not pipeline_use_llm():
+            return self._build_fallback_markdown("", info_presentazione)
+
         system_prompt = (
             "Sei un assistente AI specializzato nella presentazione di asset finanziari ed ETF.\n"
             "Analizza le informazioni fornite e genera una presentazione strutturata e dettagliata dell'ETF."
@@ -87,17 +110,14 @@ class PresentationAgent(BaseAgent):
             return res.content if hasattr(res, "content") else str(res)
         except Exception as e:
             logger.warning("run_presentation LLM failed: %s", e)
-            try:
-                plain_llm = self.create_llm()
-                res = await plain_llm.ainvoke(messages)
-                return res.content if hasattr(res, "content") else str(res)
-            except Exception as inner_e:
-                logger.warning("run_presentation plain LLM fallback failed: %s", inner_e)
-                return self._build_fallback_markdown("", info_presentazione)
+            return self._build_fallback_markdown("", info_presentazione)
 
     def run(self, isin: str = "", info_presentazione: str = "", messages: Optional[List[Message]] = None) -> str:
         if not isin and messages:
             isin = self.extract_latest_user_message(messages)
+
+        if not pipeline_use_llm():
+            return self._build_fallback_markdown(isin, info_presentazione)
 
         try:
             structured_llm = self.create_structured_llm(PresentationOutputSchema)
@@ -120,20 +140,15 @@ class PresentationAgent(BaseAgent):
             regions = ", ".join(data.regional_breakdown) if isinstance(data.regional_breakdown, list) else data.regional_breakdown
             chart = self._format_mermaid(data.mermaid_chart, f"pie title Allocazione ISIN {isin}")
             return AwaitableString(
-                f"# 📊 PRESENTAZIONE STRUMENTO (OUT 1)\n\n"
+                f"# Presentazione strumento\n\n"
                 f"**ISIN Analizzato:** `{isin}`\n\n"
-                f"### 📋 Dettagli Fondamentali\n{data.summary}\n\n"
-                f"### 💼 Allocazione Asset\n{data.asset_allocation}\n\n"
-                f"### 📊 Ripartizione Settoriale\n{sectors}\n\n"
-                f"### 🌐 Ripartizione Geografica\n{regions}\n\n"
-                f"### 🌐 Struttura e Allocazione (Mermaid Diagram)\n\n"
+                f"### Dettagli Fondamentali\n{data.summary}\n\n"
+                f"### Allocazione Asset\n{data.asset_allocation}\n\n"
+                f"### Ripartizione Settoriale\n{sectors}\n\n"
+                f"### Ripartizione Geografica\n{regions}\n\n"
+                f"### Struttura e Allocazione\n\n"
                 f"```mermaid\n{chart}\n```\n"
             )
-
-
         except Exception as e:
-            logger.warning(
-                "PresentationAgent LLM generation failed or unavailable: %s. Falling back to default markdown.",
-                e,
-            )
+            logger.warning("PresentationAgent LLM failed: %s. Using deterministic markdown.", e)
             return self._build_fallback_markdown(isin, info_presentazione)

@@ -29,13 +29,18 @@ def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
     # Recupera i dati storici (ultimo anno = "1y")
     historical_data = get_historical_data(ticker, period="1y")
     
-    # Per non saturare il contesto dell'LLM (i dati giornalieri possono essere enormi),
-    # potremmo decidere di fare un campionamento settimanale o mensile.
-    # Per ora passiamo l'intero dizionario restituito come stringa JSON formattata.
-    info_str = json.dumps({
-        "ISIN": isin,
-        "Ticker": ticker,
-        "Historical_Prices": historical_data
-    }, indent=2)
+    monthly = []
+    if isinstance(historical_data, dict):
+        monthly = historical_data.get("Monthly_Closes") or []
+
+    # Solo serie mensile: evita payload enormi nello state / nei prompt.
+    info_str = json.dumps(
+        {
+            "ISIN": isin,
+            "Ticker": ticker,
+            "Monthly_Closes": monthly,
+        },
+        indent=2,
+    )
 
     return {"info_storici": info_str}
