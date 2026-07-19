@@ -1,7 +1,5 @@
 import logging
-from typing import List
-
-from langchain_core.messages import HumanMessage, SystemMessage
+from typing import Any, List, Optional, Tuple
 
 try:
     from agents.base import BaseAgent
@@ -25,7 +23,7 @@ class JoinAgent(BaseAgent):
     def model_id(self) -> str:
         return "Join Agent"
 
-    def _build_messages(
+    def _build_prompts(
         self,
         out1: str,
         out_tech: str,
@@ -34,20 +32,17 @@ class JoinAgent(BaseAgent):
         composition_charts: str = "",
         timeline_charts: str = "",
         sentiment_charts: str = "",
-    ) -> List:
-        return [
-            SystemMessage(content=build_join_system_prompt()),
-            HumanMessage(
-                content=build_join_human_prompt(
-                    isin=isin,
-                    out1=out1,
-                    out_tech=out_tech,
-                    composition_charts=composition_charts,
-                    timeline_charts=timeline_charts,
-                    sentiment_charts=sentiment_charts,
-                )
-            ),
-        ]
+    ) -> Tuple[str, str]:
+        system_prompt = build_join_system_prompt()
+        user_prompt = build_join_human_prompt(
+            isin=isin,
+            out1=out1,
+            out_tech=out_tech,
+            composition_charts=composition_charts,
+            timeline_charts=timeline_charts,
+            sentiment_charts=sentiment_charts,
+        )
+        return system_prompt, user_prompt
 
     def _fallback_synthesis(
         self,
@@ -81,6 +76,13 @@ class JoinAgent(BaseAgent):
             f"(memoria + eventuale ricerca web).*"
         )
 
+    def _parse_and_clean_response(self, res: Any) -> Optional[str]:
+        raw_text = res.content if hasattr(res, "content") else str(res)
+        content = self.normalize_llm_content(raw_text).strip()
+        if content.startswith("{") or content.startswith("["):
+            return None
+        return content
+
     async def run_join(
         self,
         out1: str,
@@ -91,52 +93,27 @@ class JoinAgent(BaseAgent):
         timeline_charts: str = "",
         sentiment_charts: str = "",
     ) -> str:
+        fallback_kwargs = {
+            "isin": isin,
+            "composition_charts": composition_charts,
+            "timeline_charts": timeline_charts,
+            "sentiment_charts": sentiment_charts,
+        }
         if not pipeline_use_llm():
-            return self._fallback_synthesis(
-                out1,
-                out_tech,
-                isin=isin,
-                composition_charts=composition_charts,
-                timeline_charts=timeline_charts,
-                sentiment_charts=sentiment_charts,
-            )
+            return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
 
-        messages = self._build_messages(
-            out1,
-            out_tech,
-            isin=isin,
-            composition_charts=composition_charts,
-            timeline_charts=timeline_charts,
-            sentiment_charts=sentiment_charts,
-        )
+        system_prompt, user_prompt = self._build_prompts(out1, out_tech, **fallback_kwargs)
 
         try:
-            llm = self.create_llm()
-            res = await llm.ainvoke(messages)
-            content = res.content if hasattr(res, "content") else str(res)
-            if not isinstance(content, str):
-                content = str(content)
-            content = self.normalize_llm_content(content).strip()
-            if content.startswith("{") or content.startswith("["):
-                return self._fallback_synthesis(
-                    out1,
-                    out_tech,
-                    isin=isin,
-                    composition_charts=composition_charts,
-                    timeline_charts=timeline_charts,
-                    sentiment_charts=sentiment_charts,
-                )
+            llm = self.create_llm(system_prompt=system_prompt)
+            res = await llm.ainvoke(user_prompt)
+            content = self._parse_and_clean_response(res)
+            if content is None:
+                return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
             return content
         except Exception as e:
             logger.warning("JoinAgent LLM generation failed: %s. Falling back.", e)
-            return self._fallback_synthesis(
-                out1,
-                out_tech,
-                isin=isin,
-                composition_charts=composition_charts,
-                timeline_charts=timeline_charts,
-                sentiment_charts=sentiment_charts,
-            )
+            return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
 
     def run_sync(
         self,
@@ -148,41 +125,24 @@ class JoinAgent(BaseAgent):
         timeline_charts: str = "",
         sentiment_charts: str = "",
     ) -> str:
+        fallback_kwargs = {
+            "isin": isin,
+            "composition_charts": composition_charts,
+            "timeline_charts": timeline_charts,
+            "sentiment_charts": sentiment_charts,
+        }
         if not pipeline_use_llm():
-            return self._fallback_synthesis(
-                out1,
-                out_tech,
-                isin=isin,
-                composition_charts=composition_charts,
-                timeline_charts=timeline_charts,
-                sentiment_charts=sentiment_charts,
-            )
+            return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
 
-        messages = self._build_messages(
-            out1,
-            out_tech,
-            isin=isin,
-            composition_charts=composition_charts,
-            timeline_charts=timeline_charts,
-            sentiment_charts=sentiment_charts,
-        )
+        system_prompt, user_prompt = self._build_prompts(out1, out_tech, **fallback_kwargs)
 
         try:
-            llm = self.create_llm()
-            res = llm.invoke(messages)
-            content = res.content if hasattr(res, "content") else str(res)
-            if not isinstance(content, str):
-                content = str(content)
-            content = self.normalize_llm_content(content).strip()
-            if content.startswith("{") or content.startswith("["):
-                return self._fallback_synthesis(
-                    out1,
-                    out_tech,
-                    isin=isin,
-                    composition_charts=composition_charts,
-                    timeline_charts=timeline_charts,
-                    sentiment_charts=sentiment_charts,
-                )
+            llm = self.create_llm(system_prompt=system_prompt)
+            res = llm.invoke(user_prompt)
+            content = self._parse_and_clean_response(res)
+            if content is None:
+                return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
+
             footer = (
                 "\n\n---\n"
                 "*Analisi salvata in memoria. Puoi continuare a fare domande qui su "
@@ -193,14 +153,7 @@ class JoinAgent(BaseAgent):
             return content
         except Exception as e:
             logger.warning("JoinAgent LLM sync generation failed: %s. Falling back.", e)
-            return self._fallback_synthesis(
-                out1,
-                out_tech,
-                isin=isin,
-                composition_charts=composition_charts,
-                timeline_charts=timeline_charts,
-                sentiment_charts=sentiment_charts,
-            )
+            return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
 
     async def run(self, messages: List[Message]) -> str:
         latest_user_message = self.extract_latest_user_message(messages)

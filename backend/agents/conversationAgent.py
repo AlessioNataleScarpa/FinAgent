@@ -6,8 +6,6 @@ import logging
 import re
 from typing import List, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 try:
     from agents.base import BaseAgent
     from api.web_search import search_web
@@ -98,13 +96,8 @@ class ConversationAgent(BaseAgent):
             f"{web_section}"
         )
 
-        llm = self.create_llm()
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=latest_user),
-            ]
-        )
+        llm = self.create_llm(system_prompt=system_prompt)
+        response = await llm.ainvoke(latest_user)
         return self.normalize_llm_content(
             response.content if hasattr(response, "content") else response
         )

@@ -32,17 +32,26 @@ class BaseAgent(ABC):
     def llm_api_key() -> Optional[str]:
         return os.getenv("GOOGLE_API_KEY")
 
-    def create_llm(self) -> ChatGoogleGenerativeAI:
-        return ChatGoogleGenerativeAI(
-            model=self.llm_model(),
-            google_api_key=self.llm_api_key(),
-            temperature=0.0,
-            timeout=45.0,
-            max_retries=1,
-        )
+    def create_llm(self, system_prompt: Optional[str] = None) -> ChatGoogleGenerativeAI:
+        kwargs: Dict[str, Any] = {
+            "model": self.llm_model(),
+            "google_api_key": self.llm_api_key(),
+            "temperature": 0.0,
+            "timeout": 45.0,
+            "max_retries": 1,
+        }
+        if system_prompt:
+            kwargs["model_kwargs"] = {"system_instruction": system_prompt}
 
-    def create_structured_llm(self, schema, fallback_to_plain: bool = False):
-        llm = self.create_llm()
+        return ChatGoogleGenerativeAI(**kwargs)
+
+    def create_structured_llm(
+        self,
+        schema: Any,
+        system_prompt: Optional[str] = None,
+        fallback_to_plain: bool = False,
+    ):
+        llm = self.create_llm(system_prompt=system_prompt)
         if not fallback_to_plain:
             return llm.with_structured_output(schema)
 
@@ -57,6 +66,22 @@ class BaseAgent(ABC):
             (message.content for message in reversed(messages) if message.role == "user"),
             "",
         )
+
+    @staticmethod
+    def parse_structured_output(response: Any, schema_cls: Any) -> Optional[Any]:
+        if isinstance(response, schema_cls):
+            return response
+        if hasattr(response, "model_dump"):
+            try:
+                return schema_cls(**response.model_dump())
+            except Exception:
+                pass
+        if isinstance(response, dict):
+            try:
+                return schema_cls(**response)
+            except Exception:
+                pass
+        return None
 
     @staticmethod
     def strip_code_fences(content: str) -> str:

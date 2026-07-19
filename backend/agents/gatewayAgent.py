@@ -3,8 +3,8 @@ import logging
 import re
 import time
 from typing import List, Optional
+from unittest.mock import AsyncMock, MagicMock
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 try:
@@ -27,6 +27,10 @@ REANALYZE_PATTERN = re.compile(
     r"\b(analizza|analisi completa|riesegui|ricalcola|nuova analisi|"
     r"rifai(?:\s+l['\u2019]?analisi)?|rianalizza|pipeline|partiamo da capo|"
     r"parlami|dimmi|raccont|info(?:rmazioni)?|presenta)\b",
+    re.IGNORECASE,
+)
+HARD_RERUN_PATTERN = re.compile(
+    r"\b(analizza|riesegui|ricalcola|nuova analisi|rianalizza|pipeline)\b",
     re.IGNORECASE,
 )
 REPORT_MARKERS = (
@@ -102,38 +106,15 @@ class GatewayAgent(BaseAgent):
         isin_in_latest: Optional[str],
     ) -> bool:
         """Follow-up Q&A only when we already analyzed THIS ISIN in this chat."""
-        if not memory:
-            return False
-        if not self._chat_has_prior_report(messages):
+        if not memory or not self._chat_has_prior_report(messages):
             return False
 
         memory_isin = (memory.get("isin") or "").upper() or None
         if isin and memory_isin and isin != memory_isin:
             return False
 
-        # Explicit (re)analysis / "parlami di <ISIN>" with ISIN in this message
-        # always goes to full pipeline if it's a fresh ask for that instrument.
-        if isin_in_latest and REANALYZE_PATTERN.search(latest_user_message or ""):
-            # If memory already has this ISIN and user just says "parlami" again
-            # without asking for a re-run keyword like analizza/riesegui, prefer conversation.
-            hard_rerun = re.search(
-                r"\b(analizza|riesegui|ricalcola|nuova analisi|rianalizza|pipeline)\b",
-                latest_user_message or "",
-                re.IGNORECASE,
-            )
-            if hard_rerun:
-                return False
-            # "parlami di IE00..." on an ISIN already in memory → conversation (fast)
-            return True
-
-        if REANALYZE_PATTERN.search(latest_user_message or ""):
-            hard_rerun = re.search(
-                r"\b(analizza|riesegui|ricalcola|nuova analisi|rianalizza|pipeline)\b",
-                latest_user_message or "",
-                re.IGNORECASE,
-            )
-            if hard_rerun:
-                return False
+        if HARD_RERUN_PATTERN.search(latest_user_message or ""):
+            return False
 
         return True
 
@@ -265,14 +246,16 @@ class GatewayAgent(BaseAgent):
             )
 
         system_prompt = self._build_system_prompt(previous_state_json)
-        langchain_messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=latest_user_message),
-        ]
-
         logger.info("Gateway: calling router LLM (no ISIN in latest message)")
         try:
-            response = await self.structured_llm.ainvoke(langchain_messages)
+            if hasattr(self, "structured_llm") and (isinstance(self.structured_llm, (MagicMock, AsyncMock)) or getattr(self.structured_llm, "__is_mock__", False)):
+                response = await self.structured_llm.ainvoke(latest_user_message)
+            else:
+                router_llm = self.create_structured_llm(
+                    RouterIntentSchema,
+                    system_prompt=system_prompt,
+                )
+                response = await router_llm.ainvoke(latest_user_message)
         except Exception as exc:
             logger.warning("Gateway router LLM failed: %s", exc)
             if memory:

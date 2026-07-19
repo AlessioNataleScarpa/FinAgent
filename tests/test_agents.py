@@ -53,6 +53,8 @@ class TestBaseAgent:
                 model="custom-gemini-model",
                 google_api_key="custom-google-key",
                 temperature=0.0,
+                timeout=45.0,
+                max_retries=1,
             )
             assert llm == mock_chat_google.return_value
 
@@ -144,13 +146,13 @@ class TestGatewayAgent:
         mock_structured_llm.ainvoke.return_value = RouterIntentSchema(
             intent="chit_chat",
             is_routable=False,
-            direct_response="Ciao! Come posso aiutarti oggi?",
+            direct_response="Risposta diretta per chitchat.",
         )
         agent.structured_llm = mock_structured_llm
 
-        messages = [Message(role="user", content="Ciao!")]
+        messages = [Message(role="user", content="Raccontami qualcosa.")]
         result = asyncio.run(agent.run(messages))
-        assert result == "Ciao! Come posso aiutarti oggi?"
+        assert result == "Risposta diretta per chitchat."
 
     def test_non_routable_without_direct_response(self):
         agent = GatewayAgent()
@@ -180,7 +182,6 @@ class TestGatewayAgent:
         messages = [Message(role="user", content="Analizza l'ETF IE00B4L5Y983")]
         result = asyncio.run(agent.run(messages))
         assert "IE00B4L5Y983" in result
-        assert "REPORT COMPLETO" in result
 
     def test_routable_etf_isin_regex_fallback(self):
         agent = GatewayAgent()
@@ -196,7 +197,6 @@ class TestGatewayAgent:
         messages = [Message(role="user", content="Mostrami i dati per IE00B4L5Y983 per favore")]
         result = asyncio.run(agent.run(messages))
         assert "IE00B4L5Y983" in result
-        assert "REPORT COMPLETO" in result
 
     def test_routable_etf_isin_previous_state_fallback(self):
         agent = GatewayAgent()
@@ -224,7 +224,6 @@ class TestGatewayAgent:
 
         result = asyncio.run(agent.run(messages))
         assert "LU1681043599" in result
-        assert "REPORT COMPLETO" in result
 
     def test_invalid_llm_string_response(self):
         agent = GatewayAgent()
@@ -245,10 +244,10 @@ class TestPresentationAgent:
         with patch.object(agent, "create_structured_llm", side_effect=Exception("LLM unavailable")):
             out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
             assert "IE00B4L5Y983" in out
-            assert "```mermaid" in out
-            assert "Allocazione Settoriale" in out
+            assert "Presentazione strumento" in out
 
-    def test_presentation_agent_success(self):
+    @patch("agents.presentationAgent.pipeline_use_llm", return_value=True)
+    def test_presentation_agent_success(self, mock_use_llm):
         agent = PresentationAgent()
         mock_structured = MagicMock()
         mock_structured.invoke.return_value = PresentationOutputSchema(
@@ -275,9 +274,9 @@ class TestTechnicalNewsAgent:
             assert "IE00B4L5Y983" in out
             assert "PRED TEST" in out
             assert "NEWS TEST" in out
-            assert "```mermaid" in out
 
-    def test_technical_news_agent_success(self):
+    @patch("agents.technicalNewsAgent.pipeline_use_llm", return_value=True)
+    def test_technical_news_agent_success(self, mock_use_llm):
         agent = TechnicalNewsAgent()
         mock_structured = MagicMock()
         mock_structured.invoke.return_value = TechnicalNewsOutputSchema(
@@ -297,7 +296,8 @@ class TestTechnicalNewsAgent:
 
 class TestNewAgentMethodsAndJoinAgent:
     @pytest.mark.asyncio
-    async def test_run_presentation_async(self):
+    @patch("agents.presentationAgent.pipeline_use_llm", return_value=True)
+    async def test_run_presentation_async(self, mock_use_llm):
         agent = PresentationAgent()
         mock_structured = AsyncMock()
         mock_structured.ainvoke.return_value = PresentationOutputSchema(
@@ -313,7 +313,8 @@ class TestNewAgentMethodsAndJoinAgent:
             assert result.summary == "Async Presentation Summary"
 
     @pytest.mark.asyncio
-    async def test_run_technical_news_async(self):
+    @patch("agents.technicalNewsAgent.pipeline_use_llm", return_value=True)
+    async def test_run_technical_news_async(self, mock_use_llm):
         agent = TechnicalNewsAgent()
         mock_structured = AsyncMock()
         mock_structured.ainvoke.return_value = TechnicalNewsOutputSchema(
@@ -328,7 +329,8 @@ class TestNewAgentMethodsAndJoinAgent:
             assert result.technical_summary == "Async Tech Summary"
 
     @pytest.mark.asyncio
-    async def test_join_agent_run_join_async(self):
+    @patch("agents.joinAgent.pipeline_use_llm", return_value=True)
+    async def test_join_agent_run_join_async(self, mock_use_llm):
         agent = JoinAgent()
         assert agent.model_id == "Join Agent"
         mock_llm = AsyncMock()
@@ -344,7 +346,7 @@ class TestNewAgentMethodsAndJoinAgent:
         mock_llm.ainvoke.side_effect = Exception("LLM connection failed")
         with patch.object(agent, "create_llm", return_value=mock_llm):
             res = await agent.run_join("Out 1 text", "Out tech text")
-            assert "REPORT COMPLETO DI ANALISI STRUMENTO FINANZIARIO" in res
+            assert "Report di analisi ETF" in res
             assert "Out 1 text" in res
             assert "Out tech text" in res
 

@@ -1,8 +1,6 @@
 import logging
 from typing import List, Optional, Union
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 try:
     from agents.base import AwaitableString, BaseAgent
     from prompts.technical_news import build_technical_news_agent_prompt
@@ -62,25 +60,21 @@ class TechnicalNewsAgent(BaseAgent):
             "Sei un assistente AI specializzato nell'analisi tecnica e nell'impatto delle notizie finanziarie sugli ETF.\n"
             "Analizza la previsione quantitativa e le notizie per fornire una sintesi tecnica ed un'analisi dell'impatto delle notizie."
         )
-        human_prompt = (
+        user_prompt = (
             f"Previsione Quantitativa:\n{prediction_data}\n\n"
             f"Notizie di Mercato:\n{news_data}"
         )
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt),
-        ]
-
         try:
-            structured_llm = self.create_structured_llm(TechnicalNewsOutputSchema, fallback_to_plain=True)
-            res = await structured_llm.ainvoke(messages)
-            if isinstance(res, TechnicalNewsOutputSchema):
-                return res
-            if hasattr(res, "model_dump"):
-                return TechnicalNewsOutputSchema(**res.model_dump())
-            if isinstance(res, dict):
-                return TechnicalNewsOutputSchema(**res)
+            structured_llm = self.create_structured_llm(
+                TechnicalNewsOutputSchema,
+                system_prompt=system_prompt,
+                fallback_to_plain=True,
+            )
+            res = await structured_llm.ainvoke(user_prompt)
+            parsed = self.parse_structured_output(res, TechnicalNewsOutputSchema)
+            if parsed is not None:
+                return parsed
             return res.content if hasattr(res, "content") else str(res)
         except Exception as e:
             logger.warning("run_technical_news LLM failed: %s", e)
@@ -100,20 +94,15 @@ class TechnicalNewsAgent(BaseAgent):
             return self._build_fallback_markdown(isin, prediction, news)
 
         try:
-            structured_llm = self.create_structured_llm(TechnicalNewsOutputSchema)
             prompt_content = build_technical_news_agent_prompt(isin, prediction, news)
-            response = structured_llm.invoke([
-                SystemMessage(content=prompt_content),
-                HumanMessage(content=f"Genera l'analisi tecnica e news per ISIN: {isin}"),
-            ])
+            structured_llm = self.create_structured_llm(
+                TechnicalNewsOutputSchema,
+                system_prompt=prompt_content,
+            )
+            response = structured_llm.invoke(f"Genera l'analisi tecnica e news per ISIN: {isin}")
 
-            if isinstance(response, TechnicalNewsOutputSchema):
-                data = response
-            elif hasattr(response, "model_dump"):
-                data = TechnicalNewsOutputSchema(**response.model_dump())
-            elif isinstance(response, dict):
-                data = TechnicalNewsOutputSchema(**response)
-            else:
+            data = self.parse_structured_output(response, TechnicalNewsOutputSchema)
+            if data is None:
                 raise ValueError("Unexpected response type from structured LLM")
 
             chart = self._format_mermaid(data.mermaid_chart, "graph LR\n    A --> B")

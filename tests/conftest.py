@@ -24,7 +24,12 @@ def mock_google_ai():
     def mock_invoke(messages, *args, **kwargs):
         content_text = ""
         if isinstance(messages, list):
-            content_text = "\n".join([m.content for m in messages if hasattr(m, "content")])
+            content_text = "\n".join([m.content if hasattr(m, "content") else str(m) for m in messages])
+        elif isinstance(messages, str):
+            content_text = messages
+        else:
+            content_text = str(messages)
+
         mock_res = MagicMock()
         mock_res.content = (
             f"# 🏆 REPORT COMPLETO DI ANALISI STRUMENTO FINANZIARIO\n\n"

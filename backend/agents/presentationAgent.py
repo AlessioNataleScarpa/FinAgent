@@ -2,8 +2,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 try:
     from agents.base import AwaitableString, BaseAgent
     from prompts.presentation import build_presentation_agent_prompt
@@ -91,22 +89,17 @@ class PresentationAgent(BaseAgent):
             "Sei un assistente AI specializzato nella presentazione di asset finanziari ed ETF.\n"
             "Analizza le informazioni fornite e genera una presentazione strutturata e dettagliata dell'ETF."
         )
-        human_prompt = f"Analizza e presenta il seguente ETF:\n{info_presentazione}"
-
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt),
-        ]
 
         try:
-            structured_llm = self.create_structured_llm(PresentationOutputSchema, fallback_to_plain=True)
-            res = await structured_llm.ainvoke(messages)
-            if isinstance(res, PresentationOutputSchema):
-                return res
-            if hasattr(res, "model_dump"):
-                return PresentationOutputSchema(**res.model_dump())
-            if isinstance(res, dict):
-                return PresentationOutputSchema(**res)
+            structured_llm = self.create_structured_llm(
+                PresentationOutputSchema,
+                system_prompt=system_prompt,
+                fallback_to_plain=True,
+            )
+            res = await structured_llm.ainvoke(f"Analizza e presenta il seguente ETF:\n{info_presentazione}")
+            parsed = self.parse_structured_output(res, PresentationOutputSchema)
+            if parsed is not None:
+                return parsed
             return res.content if hasattr(res, "content") else str(res)
         except Exception as e:
             logger.warning("run_presentation LLM failed: %s", e)
@@ -120,20 +113,15 @@ class PresentationAgent(BaseAgent):
             return self._build_fallback_markdown(isin, info_presentazione)
 
         try:
-            structured_llm = self.create_structured_llm(PresentationOutputSchema)
             prompt_content = build_presentation_agent_prompt(isin, info_presentazione)
-            response = structured_llm.invoke([
-                SystemMessage(content=prompt_content),
-                HumanMessage(content=f"Genera la presentazione per ISIN: {isin}"),
-            ])
+            structured_llm = self.create_structured_llm(
+                PresentationOutputSchema,
+                system_prompt=prompt_content,
+            )
+            response = structured_llm.invoke(f"Genera la presentazione per ISIN: {isin}")
 
-            if isinstance(response, PresentationOutputSchema):
-                data = response
-            elif hasattr(response, "model_dump"):
-                data = PresentationOutputSchema(**response.model_dump())
-            elif isinstance(response, dict):
-                data = PresentationOutputSchema(**response)
-            else:
+            data = self.parse_structured_output(response, PresentationOutputSchema)
+            if data is None:
                 raise ValueError("Unexpected response type from structured LLM")
 
             sectors = ", ".join(data.sector_breakdown) if isinstance(data.sector_breakdown, list) else data.sector_breakdown
