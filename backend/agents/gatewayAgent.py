@@ -16,10 +16,7 @@ except ImportError:
     from backend.schemas.chat import Message
     from backend.schemas.routing import RouterIntentSchema
 
-try:
-    from pipeline.graph import graph
-except ImportError:
-    from backend.pipeline.graph import graph
+
 
 ISIN_PATTERN = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b", re.IGNORECASE)
 
@@ -67,6 +64,11 @@ class GatewayAgent(BaseAgent):
         isin: Optional[str],
         latest_user_message: str,
     ) -> str:
+        try:
+            from pipeline.graph import graph
+        except ImportError:
+            from backend.pipeline.graph import graph
+
         pipeline_input = {
             "isin": isin or "",
             "clean_query": clean_query or latest_user_message,

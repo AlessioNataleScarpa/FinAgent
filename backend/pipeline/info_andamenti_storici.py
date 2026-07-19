@@ -1,47 +1,41 @@
 """
 Node: INFO ANDAMENTI STORICI
-Fetches historical performance data
+Fetches historical performance data using FMP
 """
 
 import logging
+import json
 from typing import Dict, Any
-import httpx
 from .state import PipelineState
+from api.openfigi import get_best_ticker
+from api.yahoo_data import get_historical_data
 
 logger = logging.getLogger(__name__)
 
-
 def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
     """
-    Recupera i dati storici
+    Recupera i dati storici tramite FMP usando il ticker ottenuto dall'ISIN.
     """
     isin = state.get("isin", "N/A")
-    fallback_data = (
-        f"--- HISTORICAL PERFORMANCE DATA ({isin}) ---\n"
-        f"Source: LondonStrategicEdge / Market Analytics (Fallback Active)\n"
-        f"1-Year Return: +14.2%\n"
-        f"3-Year CAGR: +9.8%\n"
-        f"5-Year CAGR: +11.5%\n"
-        f"Annualized Volatility: 13.4%\n"
-        f"Sharpe Ratio: 0.85\n"
-        f"Max Drawdown (3Y): -16.8%\n"
-        f"Historical Price Points (Last 4 Quarters):\n"
-        f" - Q3 2025: $78.50\n"
-        f" - Q4 2025: $82.10\n"
-        f" - Q1 2026: $85.40\n"
-        f" - Q2 2026: $89.60\n"
-    )
+    logger.info("Fetching historical info for ISIN: %s", isin)
 
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            resp = client.get("https://londonstrategicedge.com/")
-            if resp.status_code == 200:
-                result_str = f"Data retrieved from https://londonstrategicedge.com/: HTTP 200 OK\n{fallback_data}"
-            else:
-                result_str = fallback_data
-    except Exception as e:
-        logger.warning("Failed to fetch historical performance data: %s", e)
-        result_str = fallback_data
+    ticker = get_best_ticker(isin)
+    if not ticker:
+        logger.warning(f"Impossibile trovare un Ticker per l'ISIN {isin}. Uso fallback.")
+        ticker = "SWDA.MI" if "IE00B4L5Y983" in isin else "AAPL"
 
-    return {"info_storici": result_str}
+    logger.info(f"Ticker convertito: {ticker}")
+    
+    # Recupera i dati storici (ultimo anno = "1y")
+    historical_data = get_historical_data(ticker, period="1y")
+    
+    # Per non saturare il contesto dell'LLM (i dati giornalieri possono essere enormi),
+    # potremmo decidere di fare un campionamento settimanale o mensile.
+    # Per ora passiamo l'intero dizionario restituito come stringa JSON formattata.
+    info_str = json.dumps({
+        "ISIN": isin,
+        "Ticker": ticker,
+        "Historical_Prices": historical_data
+    }, indent=2)
 
+    return {"info_storici": info_str}

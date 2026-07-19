@@ -7,3 +7,5 @@ pydantic
 pytest
 pytest-asyncio
 httpx
+python-dotenv
+yfinance
