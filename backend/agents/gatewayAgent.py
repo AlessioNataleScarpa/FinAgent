@@ -133,8 +133,11 @@ class GatewayAgent(BaseAgent):
     ) -> str:
         try:
             from pipeline.graph import graph
-        except ImportError:
-            from backend.pipeline.graph import graph
+        except (ImportError, ModuleNotFoundError) as e:
+            if getattr(e, "name", "") == "pipeline":
+                from backend.pipeline.graph import graph
+            else:
+                raise
 
         if mode == "full_analysis" and not isin:
             return (

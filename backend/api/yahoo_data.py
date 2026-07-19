@@ -1,134 +1,70 @@
+import asyncio
+import concurrent.futures
+import json
 import logging
-from typing import Any, Dict, List
+import sys
+from pathlib import Path
+from typing import Any, Dict
 
-import yfinance as yf
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 logger = logging.getLogger(__name__)
 
+SERVER_SCRIPT = Path(__file__).parent.parent / "mcp_server" / "yfinance_server.py"
 
-def _extract_sector_weights(info: Dict[str, Any], ticker_obj: yf.Ticker) -> Dict[str, float]:
-    candidates = [
-        info.get("sectorWeightings"),
-        info.get("categoryWeightings"),
-        info.get("sectorWeighting"),
-    ]
 
+async def _call_mcp_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Esegue una chiamata a un tool fornito dal server MCP Yahoo Finance.
+    """
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(SERVER_SCRIPT)],
+        env=None,
+    )
     try:
-        funds = getattr(ticker_obj, "funds_data", None)
-        if funds is not None:
-            sector = getattr(funds, "sector_weightings", None)
-            if isinstance(sector, dict):
-                candidates.append(sector)
-    except Exception:
-        pass
-
-    for raw in candidates:
-        if not isinstance(raw, dict):
-            continue
-        weights: Dict[str, float] = {}
-        for key, value in raw.items():
-            try:
-                if isinstance(value, dict):
-                    numeric = float(next(iter(value.values())))
-                else:
-                    numeric = float(value)
-                # yfinance sometimes returns 0-1 fractions
-                if 0 < numeric <= 1:
-                    numeric *= 100.0
-                if numeric > 0:
-                    weights[str(key)] = round(numeric, 2)
-            except (TypeError, ValueError, StopIteration):
-                continue
-        if weights:
-            return weights
-    return {}
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
+                if hasattr(result, "structuredContent") and result.structuredContent and "result" in result.structuredContent:
+                    return result.structuredContent["result"]
+                if result.content:
+                    for content in result.content:
+                        if hasattr(content, "text") and content.text:
+                            try:
+                                return json.loads(content.text)
+                            except Exception:
+                                return {"text": content.text}
+                return {}
+    except Exception as e:
+        logger.error("Errore durante la chiamata MCP tool %s per %s: %s", tool_name, arguments, e)
+        return {"error": str(e)}
 
 
-def _extract_asset_allocation(info: Dict[str, Any]) -> Dict[str, float]:
-    raw = info.get("assetAllocation") or info.get("holdings")
-    weights: Dict[str, float] = {}
-    if isinstance(raw, dict):
-        for key, value in raw.items():
-            try:
-                numeric = float(value)
-                if 0 < numeric <= 1:
-                    numeric *= 100.0
-                if numeric > 0:
-                    weights[str(key)] = round(numeric, 2)
-            except (TypeError, ValueError):
-                continue
-    quote_type = str(info.get("quoteType") or info.get("typeDisp") or "").upper()
-    if not weights and ("ETF" in quote_type or "FUND" in quote_type or info.get("longBusinessSummary")):
-        weights = {"Azioni / Equity": 98.0, "Liquidita / Altro": 2.0}
-    return weights
+def _run_async(coro):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 
 def get_profile(ticker: str) -> Dict[str, Any]:
     """
-    Recupera il profilo aziendale o dell'ETF tramite yfinance.
+    Recupera il profilo aziendale o dell'ETF delegando la chiamata al server MCP.
     """
-    try:
-        t = yf.Ticker(ticker)
-        info = t.info or {}
-        if info:
-            profile_data = {
-                "name": info.get("shortName", info.get("longName")),
-                "sector": info.get("sector", "N/A"),
-                "industry": info.get("industry", "N/A"),
-                "description": info.get("longBusinessSummary", "N/A"),
-                "marketCap": info.get("marketCap", "N/A"),
-                "currency": info.get("currency", "N/A"),
-                "exchange": info.get("exchange", "N/A"),
-                "previousClose": info.get("previousClose", "N/A"),
-                "yield": info.get("yield", "N/A"),
-                "category": info.get("category", "N/A"),
-                "totalAssets": info.get("totalAssets", "N/A"),
-                "sectorWeightings": _extract_sector_weights(info, t),
-                "assetAllocation": _extract_asset_allocation(info),
-            }
-            return profile_data
-
-        logger.warning("Nessun profilo trovato su Yahoo Finance per il ticker %s", ticker)
-        return {"error": "Profile not found"}
-    except Exception as e:
-        logger.error("Errore durante il recupero del profilo Yahoo Finance per %s: %s", ticker, e)
-        return {"error": str(e)}
+    return _run_async(_call_mcp_tool("get_profile", {"ticker": ticker}))
 
 
 def get_historical_data(ticker: str, period: str = "1y") -> Dict[str, Any]:
     """
-    Recupera una serie mensile compatta (no daily dump) per i grafici Mermaid.
+    Recupera le serie storiche mensili delegando la chiamata al server MCP.
     """
-    try:
-        t = yf.Ticker(ticker)
-        # Prefer monthly bars to avoid downloading ~250 daily rows.
-        hist = t.history(period=period, interval="1mo")
-        if hist.empty:
-            hist = t.history(period=period)
-
-        if hist.empty:
-            logger.warning("Nessun dato storico trovato su Yahoo Finance per il ticker %s", ticker)
-            return {"error": "Historical data not found"}
-
-        hist = hist.copy()
-        hist.reset_index(inplace=True)
-        hist["Date"] = hist["Date"].astype(str)
-
-        monthly = (
-            hist.assign(month=hist["Date"].astype(str).str.slice(0, 7))
-            .groupby("month", as_index=False)
-            .agg(close=("Close", "last"))
-        )
-        monthly_closes: List[Dict[str, Any]] = [
-            {"month": row["month"], "close": round(float(row["close"]), 4)}
-            for _, row in monthly.iterrows()
-        ]
-
-        return {"Monthly_Closes": monthly_closes}
-    except Exception as e:
-        logger.error(
-            "Errore durante il recupero dei dati storici Yahoo Finance per %s: %s",
-            ticker,
-            e,
-        )
-        return {"error": str(e)}
+    return _run_async(_call_mcp_tool("get_historical_data", {"ticker": ticker, "period": period}))

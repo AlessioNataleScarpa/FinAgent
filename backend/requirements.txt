@@ -9,3 +9,4 @@ pytest-asyncio
 httpx
 python-dotenv
 yfinance
+mcp

@@ -77,6 +77,12 @@ def get_best_ticker(isin: str, preferred_exchange: str = "US", api_key: Optional
                     ticker = f"{ticker}.L"
                 elif exch == "MI" and "." not in ticker:
                     ticker = f"{ticker}.MI"
+                elif exch in {"GY", "GR"} and "." not in ticker:
+                    ticker = f"{ticker}.DE"
+                elif exch == "NA" and "." not in ticker:
+                    ticker = f"{ticker}.AS"
+                elif exch in {"PA", "FP"} and "." not in ticker:
+                    ticker = f"{ticker}.PA"
                 break
         if ticker:
             break
