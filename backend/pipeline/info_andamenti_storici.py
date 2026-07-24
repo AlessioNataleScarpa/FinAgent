@@ -3,8 +3,9 @@ Node: INFO ANDAMENTI STORICI
 Fetches historical performance data using FMP
 """
 
-import logging
 import json
+import logging
+import os
 from typing import Dict, Any
 from .state import PipelineState
 from api.openfigi import get_best_ticker
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
     """
-    Recupera i dati storici tramite FMP usando il ticker ottenuto dall'ISIN.
+    Recupera OHLCV mensile via MCP usando il ticker ottenuto dall'ISIN.
     """
     isin = state.get("isin", "N/A")
     logger.info("Fetching historical info for ISIN: %s", isin)
@@ -26,21 +27,41 @@ def fetch_info_andamenti_storici(state: PipelineState) -> Dict[str, Any]:
 
     logger.info(f"Ticker convertito: {ticker}")
     
-    # Recupera i dati storici (ultimo anno = "1y")
-    historical_data = get_historical_data(ticker, period="1y")
+    # Cinque anni mensili offrono un contesto compatto ma adeguato al TSFM.
+    period = os.getenv("TSFM_HISTORY_PERIOD", "5y")
+    historical_data = get_historical_data(ticker, period=period)
     
     monthly = []
+    ohlcv = []
     if isinstance(historical_data, dict):
         monthly = historical_data.get("Monthly_Closes") or []
+        ohlcv = historical_data.get("Monthly_OHLCV") or []
+
+    prices = []
+    dates = []
+    for point in monthly:
+        if not isinstance(point, dict):
+            continue
+        try:
+            prices.append(float(point["close"]))
+            dates.append(str(point.get("month") or ""))
+        except (KeyError, TypeError, ValueError):
+            continue
 
     # Solo serie mensile: evita payload enormi nello state / nei prompt.
     info_str = json.dumps(
         {
             "ISIN": isin,
             "Ticker": ticker,
+            "Period": period,
+            "Monthly_OHLCV": ohlcv,
             "Monthly_Closes": monthly,
         },
         indent=2,
     )
 
-    return {"info_storici": info_str}
+    return {
+        "info_storici": info_str,
+        "historical_prices": prices,
+        "historical_dates": dates,
+    }

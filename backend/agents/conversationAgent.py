@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     from agents.base import BaseAgent
@@ -37,7 +38,10 @@ class ConversationAgent(BaseAgent):
         match = ISIN_PATTERN.search(text or "")
         return match.group(1).upper() if match else None
 
-    def _resolve_memory(self, messages: List[Message]) -> tuple[Optional[str], str]:
+    def _resolve_memory(
+        self,
+        messages: List[Message],
+    ) -> tuple[Optional[str], str, Optional[Dict[str, Any]]]:
         store = get_memory_store()
         latest_user = self.extract_latest_user_message(messages)
         isin = self._extract_isin(latest_user)
@@ -53,7 +57,107 @@ class ConversationAgent(BaseAgent):
             isin = analysis.get("isin")
 
         context = store.context_blob(isin) if isin else store.context_blob()
-        return isin, context
+        return isin, context, analysis
+
+    @staticmethod
+    def _memory_fallback(
+        latest_user: str,
+        isin: Optional[str],
+        analysis: Dict[str, Any],
+    ) -> str:
+        """Answer from persisted artifacts when the conversational LLM times out."""
+        lowered = (latest_user or "").lower()
+        header = (
+            f"## Dati salvati per `{isin or analysis.get('isin') or 'N/D'}`\n\n"
+            "_Risposta diretta dalla memoria della pipeline._\n\n"
+        )
+
+        if re.search(r"previs|forecast|futur|intervall|incertezz|graf", lowered):
+            forecast = analysis.get("tsfm_forecast") or {}
+            mean = forecast.get("mean") or []
+            lower = forecast.get("lower_bound") or []
+            upper = forecast.get("upper_bound") or []
+            if mean and lower and upper:
+                horizon_rows = []
+                for label, step in (
+                    ("1 anno", 12),
+                    ("5 anni", 60),
+                    ("10 anni", 120),
+                    ("20 anni", 240),
+                ):
+                    if len(mean) >= step and len(lower) >= step and len(upper) >= step:
+                        index = step - 1
+                        horizon_rows.append(
+                            f"| {label} | {float(mean[index]):.2f} | "
+                            f"{float(lower[index]):.2f} – "
+                            f"{float(upper[index]):.2f} |"
+                        )
+                if not horizon_rows:
+                    horizon_rows.append(
+                        f"| {len(mean)} mesi | {float(mean[-1]):.2f} | "
+                        f"{float(lower[-1]):.2f} – {float(upper[-1]):.2f} |"
+                    )
+                table = ""
+                if horizon_rows:
+                    table = (
+                        "\n| Orizzonte | Scenario centrale | Intervallo 80% |\n"
+                        "|---|---:|---:|\n"
+                        + "\n".join(horizon_rows)
+                        + "\n"
+                    )
+                summary = (
+                    f"- **Modello:** `{forecast.get('model', 'N/D')}`\n"
+                    f"- **Stato:** `{forecast.get('status', 'N/D')}`\n"
+                    f"- **Orizzonte:** {forecast.get('horizon', len(mean))} mesi\n"
+                    f"{table}\n"
+                    "Lo scenario centrale è la traiettoria più rappresentativa del "
+                    "modello; i due limiti descrivono l'incertezza. Più sono distanti, "
+                    "meno è prudente attribuire forza al segnale direzionale.\n\n"
+                )
+            else:
+                summary = (
+                    "La previsione strutturata non è disponibile per questa analisi.\n\n"
+                )
+            return header + summary + (analysis.get("forecast_charts") or "")
+
+        if re.search(r"news|notizi|sentiment|impatto", lowered):
+            return header + (
+                analysis.get("technical")
+                or analysis.get("news_data")
+                or "Nessun dato news salvato."
+            )
+
+        if re.search(r"compos|sett|region|alloc|present", lowered):
+            return header + "\n\n".join(
+                filter(
+                    None,
+                    [
+                        analysis.get("presentation"),
+                        analysis.get("composition_charts"),
+                    ],
+                )
+            )
+
+        if re.search(r"storic|andament|passat|prezzo", lowered):
+            return header + "\n\n".join(
+                filter(
+                    None,
+                    [
+                        analysis.get("timeline_charts"),
+                        analysis.get("info_storici"),
+                    ],
+                )
+            )
+
+        forecast_json = json.dumps(
+            analysis.get("tsfm_forecast") or {},
+            ensure_ascii=False,
+        )
+        return (
+            header
+            + (analysis.get("report") or "Report non disponibile.")
+            + f"\n\n### Forecast strutturato\n\n`{forecast_json}`"
+        )
 
     def _maybe_web_context(self, latest_user: str, isin: Optional[str]) -> str:
         if not NEEDS_WEB.search(latest_user or ""):
@@ -65,9 +169,9 @@ class ConversationAgent(BaseAgent):
 
     async def run(self, messages: List[Message]) -> str:
         latest_user = self.extract_latest_user_message(messages)
-        isin, context = self._resolve_memory(messages)
+        isin, context, analysis = self._resolve_memory(messages)
 
-        if not context:
+        if not context or not analysis:
             return (
                 "Non ho ancora un'analisi ETF in memoria.\n\n"
                 "Chiedi prima a **gatewayAgent** di analizzare un ISIN "
@@ -96,8 +200,16 @@ class ConversationAgent(BaseAgent):
             f"{web_section}"
         )
 
-        llm = self.create_llm(system_prompt=system_prompt)
-        response = await llm.ainvoke(latest_user)
-        return self.normalize_llm_content(
-            response.content if hasattr(response, "content") else response
-        )
+        try:
+            llm = self.create_llm(system_prompt=system_prompt)
+            response = await llm.ainvoke(latest_user)
+            return self.normalize_llm_content(
+                response.content if hasattr(response, "content") else response
+            )
+        except Exception as exc:
+            logger.warning(
+                "Conversation LLM unavailable for %s; answering from memory: %s",
+                isin or "N/D",
+                exc,
+            )
+            return self._memory_fallback(latest_user, isin, analysis)

@@ -32,11 +32,13 @@ def save_memory_node(state: PipelineState) -> Dict[str, Any]:
         technical=state.get("agent_2_out_tech") or "",
         composition_charts=state.get("composition_charts") or "",
         timeline_charts=state.get("timeline_charts") or "",
+        forecast_charts=state.get("forecast_charts") or "",
         sentiment_charts=state.get("sentiment_charts") or "",
         info_presentazione=state.get("info_presentazione") or "",
         info_storici=state.get("info_storici") or "",
         news_data=state.get("news_data") or "",
         prediction=state.get("prediction_out2") or "",
+        tsfm_forecast=state.get("tsfm_forecast") or {},
         clean_query=state.get("clean_query") or "",
     )
     logger.info("Saved ETF analysis memory for ISIN: %s", isin)

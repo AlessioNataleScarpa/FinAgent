@@ -112,6 +112,58 @@ def build_xychart_line(
     )
 
 
+def build_xychart_lines(
+    title: str,
+    x_labels: Sequence[str],
+    series: Sequence[Sequence[Number]],
+    *,
+    y_axis_label: str = "Prezzo",
+) -> str:
+    """Build a Mermaid XY chart with multiple line series."""
+    labels = [_clean_label(label) for label in x_labels]
+    clean_series: List[List[float]] = []
+    for raw_series in series:
+        values: List[float] = []
+        for value in raw_series:
+            try:
+                values.append(round(float(value), 2))
+            except (TypeError, ValueError):
+                values = []
+                break
+        if values:
+            clean_series.append(values)
+
+    if not labels or not clean_series:
+        return build_xychart_line(
+            title=title,
+            x_labels=["N/D"],
+            y_values=[0],
+            y_axis_label=y_axis_label,
+        )
+
+    n = min(len(labels), *(len(values) for values in clean_series))
+    labels = labels[:n]
+    clean_series = [values[:n] for values in clean_series]
+    all_values = [value for values in clean_series for value in values]
+    y_min = min(all_values)
+    y_max = max(all_values)
+    padding = max((y_max - y_min) * 0.08, abs(y_max) * 0.02, 0.1)
+    y_min = max(0.0, y_min - padding)
+    y_max += padding
+    x_axis = ", ".join(f'"{label}"' for label in labels)
+
+    lines = [
+        "xychart-beta",
+        f'    title "{_clean_label(title)}"',
+        f"    x-axis [{x_axis}]",
+        f'    y-axis "{_clean_label(y_axis_label)}" '
+        f"{round(y_min, 2)} --> {round(y_max, 2)}",
+    ]
+    for values in clean_series:
+        lines.append(f"    line [{', '.join(str(value) for value in values)}]")
+    return "\n".join(lines)
+
+
 def default_sector_slices() -> Dict[str, float]:
     return {
         "Information Technology": 23.5,

@@ -17,6 +17,7 @@ def build_join_system_prompt() -> str:
         "   - Presentazione strumento\n"
         "   - Composizione (grafici a torta)\n"
         "   - Andamento temporale (grafico xy)\n"
+        "   - Previsione futura con scenario centrale e intervallo\n"
         "   - Analisi tecnica e news\n"
         "   - Sentiment\n"
         "   - Conclusioni operative\n"
@@ -31,6 +32,7 @@ def build_join_human_prompt(
     out_tech: str,
     composition_charts: str = "",
     timeline_charts: str = "",
+    forecast_charts: str = "",
     sentiment_charts: str = "",
 ) -> str:
     return (
@@ -39,6 +41,7 @@ def build_join_human_prompt(
         f"=== OUT TECNICA / NEWS ===\n{out_tech}\n\n"
         f"=== GRAFICI COMPOSIZIONE (Mermaid pronti) ===\n{composition_charts}\n\n"
         f"=== GRAFICI ANDAMENTO TEMPORALE (Mermaid pronti) ===\n{timeline_charts}\n\n"
+        f"=== PREVISIONE FUTURA (Mermaid pronto) ===\n{forecast_charts}\n\n"
         f"=== GRAFICI SENTIMENT (Mermaid pronti) ===\n{sentiment_charts}\n\n"
         "Genera ora il REPORT FINALE in Markdown."
     )

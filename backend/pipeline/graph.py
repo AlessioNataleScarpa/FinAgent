@@ -12,7 +12,9 @@ Flow:
                                         └→ timeline_charts ────────────┼→ join_presenter → save_memory → END
 """
 
-from typing import Literal
+import logging
+import os
+from typing import Any, Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
 
@@ -20,6 +22,7 @@ from .agent_1 import generate_agent_1_out
 from .agent_2 import generate_agent_2_out
 from .composition_charts import composition_charts_node
 from .conversation import conversation_node
+from .forecast_charts import forecast_charts_node
 from .info_andamenti_storici import fetch_info_andamenti_storici
 from .info_presentazione import fetch_info_presentazione
 from .join_presenter import join_presenter_node
@@ -29,6 +32,8 @@ from .save_memory import save_memory_node
 from .sentiment_charts import sentiment_charts_node
 from .state import PipelineState
 from .timeline_charts import timeline_charts_node
+
+logger = logging.getLogger(__name__)
 
 
 def route_mode(state: PipelineState) -> Literal["conversation", "full_analysis"]:
@@ -57,6 +62,7 @@ builder.add_node("news", fetch_news)
 builder.add_node("info_andamenti_storici", fetch_info_andamenti_storici)
 builder.add_node("predict", predict_node)
 builder.add_node("timeline_charts", timeline_charts_node)
+builder.add_node("forecast_charts", forecast_charts_node)
 builder.add_node("agent_2", generate_agent_2_out)
 builder.add_node("sentiment_charts", sentiment_charts_node)
 builder.add_node("join_presenter", join_presenter_node)
@@ -85,6 +91,7 @@ builder.add_edge("agent_1", "composition_charts")
 # Historical branch → predict + timeline chart
 builder.add_edge("info_andamenti_storici", "predict")
 builder.add_edge("info_andamenti_storici", "timeline_charts")
+builder.add_edge("predict", "forecast_charts")
 
 # Technical branch
 builder.add_edge("news", "agent_2")
@@ -94,11 +101,91 @@ builder.add_edge("agent_2", "sentiment_charts")
 # Join waits for all chart/analysis modules
 builder.add_edge("composition_charts", "join_presenter")
 builder.add_edge("timeline_charts", "join_presenter")
+builder.add_edge("forecast_charts", "join_presenter")
 builder.add_edge("sentiment_charts", "join_presenter")
 
 # Persist memory then end
 builder.add_edge("join_presenter", "save_memory")
 builder.add_edge("save_memory", END)
 
-graph = builder.compile()
+class RuntimeGraph:
+    """Compiled graph with optional AsyncPostgresSaver lifecycle support."""
+
+    def __init__(self, state_builder: StateGraph):
+        self._builder = state_builder
+        self._sync_graph = state_builder.compile()
+        self._async_graph = self._sync_graph
+        self._postgres_context: Optional[Any] = None
+        self._postgres_enabled = False
+
+    async def start(self) -> None:
+        """Attach PostgreSQL persistence when LANGGRAPH_POSTGRES_URI is set."""
+        uri = os.getenv("LANGGRAPH_POSTGRES_URI", "").strip()
+        if not uri or self._postgres_enabled:
+            return
+        context = None
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            context = AsyncPostgresSaver.from_conn_string(uri)
+            saver = await context.__aenter__()
+            await saver.setup()
+            self._async_graph = self._builder.compile(checkpointer=saver)
+            self._postgres_context = context
+            self._postgres_enabled = True
+            logger.info("LangGraph AsyncPostgresSaver enabled")
+        except Exception as exc:
+            if context is not None:
+                try:
+                    await context.__aexit__(None, None, None)
+                except Exception:
+                    logger.debug(
+                        "Unable to close failed PostgreSQL checkpointer context",
+                        exc_info=True,
+                    )
+            logger.warning(
+                "PostgreSQL checkpointer unavailable; continuing without it: %s",
+                exc,
+            )
+
+    async def stop(self) -> None:
+        if self._postgres_context is not None:
+            await self._postgres_context.__aexit__(None, None, None)
+        self._postgres_context = None
+        self._postgres_enabled = False
+        self._async_graph = self._sync_graph
+
+    @staticmethod
+    def _checkpoint_config(
+        state: PipelineState,
+        config: Optional[dict],
+    ) -> Optional[dict]:
+        if config is not None:
+            return config
+        isin = (state.get("isin") or "anonymous").strip().upper()
+        mode = state.get("mode") or "full_analysis"
+        return {"configurable": {"thread_id": f"{mode}:{isin}"}}
+
+    def invoke(
+        self,
+        state: PipelineState,
+        config: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> dict:
+        # The synchronous graph intentionally remains checkpoint-free: the
+        # production API path is async and uses AsyncPostgresSaver.
+        return self._sync_graph.invoke(state, config=config, **kwargs)
+
+    async def ainvoke(
+        self,
+        state: PipelineState,
+        config: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> dict:
+        if self._postgres_enabled:
+            config = self._checkpoint_config(state, config)
+        return await self._async_graph.ainvoke(state, config=config, **kwargs)
+
+
+graph = RuntimeGraph(builder)
 app = graph

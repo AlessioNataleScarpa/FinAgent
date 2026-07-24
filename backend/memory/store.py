@@ -54,11 +54,13 @@ class EtfMemoryStore:
         technical: str = "",
         composition_charts: str = "",
         timeline_charts: str = "",
+        forecast_charts: str = "",
         sentiment_charts: str = "",
         info_presentazione: str = "",
         info_storici: str = "",
         news_data: str = "",
         prediction: str = "",
+        tsfm_forecast: Optional[Dict[str, Any]] = None,
         clean_query: str = "",
     ) -> Dict[str, Any]:
         key = (isin or "").strip().upper()
@@ -74,11 +76,13 @@ class EtfMemoryStore:
             "technical": technical,
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
+            "forecast_charts": forecast_charts,
             "sentiment_charts": sentiment_charts,
             "info_presentazione": info_presentazione,
             "info_storici": info_storici,
             "news_data": news_data,
             "prediction": prediction,
+            "tsfm_forecast": tsfm_forecast or {},
         }
 
         with _lock:
@@ -103,19 +107,30 @@ class EtfMemoryStore:
             analysis = self._data["analyses"].get(latest)
             return dict(analysis) if analysis else None
 
-    def context_blob(self, isin: Optional[str] = None, *, max_chars: int = 12000) -> str:
+    def context_blob(self, isin: Optional[str] = None, *, max_chars: int = 18000) -> str:
         analysis = self.get(isin) if isin else self.get_latest()
         if not analysis:
             return ""
 
         # Keep conversation prompts lean: report + short extras only.
-        report = (analysis.get("report") or "")[:8000]
-        news = (analysis.get("news_data") or "")[:1500]
-        prediction = (analysis.get("prediction") or "")[:1000]
+        report = (analysis.get("report") or "")[:6500]
+        news = (analysis.get("news_data") or "")[:1000]
+        prediction = (analysis.get("prediction") or "")[:1500]
+        forecast_charts = (analysis.get("forecast_charts") or "")[:3500]
+        structured_forecast = json.dumps(
+            analysis.get("tsfm_forecast") or {},
+            ensure_ascii=False,
+        )[:2500]
 
         sections = [
             f"ISIN: {analysis.get('isin')}",
             f"Aggiornato: {analysis.get('updated_at')}",
+            "",
+            "=== FORECAST STRUTTURATO ===",
+            structured_forecast,
+            "",
+            "=== GRAFICO FORECAST ===",
+            forecast_charts,
             "",
             "=== REPORT FINALE ===",
             report,

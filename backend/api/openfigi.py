@@ -49,7 +49,7 @@ def isin_to_ticker(isin: str, api_key: Optional[str] = None) -> List[Dict[str, A
         
     return []
 
-def get_best_ticker(isin: str, preferred_exchange: str = "US", api_key: Optional[str] = None) -> Optional[str]:
+def get_best_ticker(isin: str, preferred_exchange: str = "L", api_key: Optional[str] = None) -> Optional[str]:
     """
     Estrae un ticker da un ISIN, privilegiando exchange liquidi per ETF (L/LN/MI/US).
     """
@@ -64,7 +64,9 @@ def get_best_ticker(isin: str, preferred_exchange: str = "US", api_key: Optional
         _TICKER_CACHE[key] = None
         return None
 
-    preferred = [preferred_exchange, "L", "LN", "MI", "US", "GY", "NA"]
+    preferred = list(
+        dict.fromkeys([preferred_exchange, "L", "LN", "MI", "GY", "NA", "US"])
+    )
     ticker: Optional[str] = None
     for exch in preferred:
         if not exch:

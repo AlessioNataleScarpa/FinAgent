@@ -6,7 +6,9 @@ Il progetto integra un backend FastAPI, una pipeline LangGraph e agenti speciali
 ## Architettura
 
 ```
-OpenWebUI (:3000) → backend FastAPI (:8000/v1) → agents / pipeline → Google Gemini / LLM
+OpenWebUI (:3000) → backend FastAPI (:8000/v1) → LangGraph
+                                                ├→ Google Gemini / LLM
+                                                └→ Chronos TSFM (:8001)
 ```
 
 - `backend/main.py`: applicazione FastAPI.
@@ -25,20 +27,27 @@ OpenWebUI (:3000) → backend FastAPI (:8000/v1) → agents / pipeline → Googl
 - `technicalNewsAgent`
 - `joinAgent`
 
-## Pipeline LangGraph
+## Pipeline LangGraph dual-stream (zero-shot)
 
 La pipeline in `backend/pipeline/graph.py` esegue una composizione multi-stage:
 
-1. `info_presentazione` → `agent_1`
-2. `news` + `info_andamenti_storici` → `predict` → `agent_2`
-3. `agent_1` + `agent_2` → `join_presenter`
+1. `info_presentazione` → `agent_1` (contesto statico).
+2. `info_andamenti_storici` → `predict` (forecast TSFM zero-shot).
+3. `news` + `predict` → `agent_2` (fusione quantitativa/qualitativa).
+4. `predict` → `forecast_charts` genera viste a 1, 5, 10 e 20 anni con intervallo 80%.
+5. I rami e i grafici convergono in `join_presenter`.
+
+I tre nodi di raccolta partono in parallelo. Lo stato conserva separatamente
+prezzi, date e forecast strutturato (`mean`, `lower_bound`, `upper_bound`), così
+gli array non devono essere ricostruiti dai prompt.
 
 ### Nodi principali
 
 - `backend/pipeline/info_presentazione.py`: recupera i metadati e le informazioni di presentazione ETF.
-- `backend/pipeline/news.py`: genera un blocco di notizie e sentiment di mercato.
-- `backend/pipeline/info_andamenti_storici.py`: recupera dati storici con fallback realistico.
-- `backend/pipeline/predict.py`: genera una previsione sintetica (OUT 2).
+- `backend/pipeline/news.py`: recupera news reali tramite Yahoo Finance MCP.
+- `backend/pipeline/info_andamenti_storici.py`: recupera OHLCV mensile tramite MCP.
+- `backend/pipeline/predict.py`: invoca un TSFM e genera OUT 2 con intervalli.
+- `backend/pipeline/forecast_charts.py`: mostra forecast centrale, limite inferiore e superiore.
 - `backend/pipeline/agent_1.py`: invoca `PresentationAgent` e produce `agent_1_out1`.
 - `backend/pipeline/agent_2.py`: invoca `TechnicalNewsAgent` e produce `agent_2_out_tech`.
 - `backend/pipeline/join_presenter.py`: sintetizza i due output in un report finale.
@@ -53,20 +62,91 @@ docker compose up --build
 
 - OpenWebUI: `http://localhost:3000`
 - Backend FastAPI: `http://localhost:8000`
+- Chronos TSFM: `http://localhost:8001` (avviato automaticamente)
 
 ### Nota
 
 La configurazione `docker-compose.yml` include:
 - servizio `open-webui`
 - servizio `backend`
-- volume persistente `open-webui-data`
+- servizio `tsfm` con Amazon Chronos-Bolt Tiny su CPU
+- volumi persistenti `open-webui-data` e `tsfm-model-cache`
 
 ## Variabili d'ambiente
 
 - `GOOGLE_API_KEY`: chiave API per Google Gemini.
 - `GEMINI_MODEL`: modello LLM per gli agent. Default: `gemma-4-31b-it`.
+- `TSFM_MODEL_ID`: modello locale, default `amazon/chronos-bolt-tiny`.
+- `TSFM_TORCH_THREADS`: thread CPU assegnati al modello, default `2`.
+- `TSFM_ENDPOINT`: override opzionale; normalmente non va impostato.
+- `TSFM_API_TOKEN`: bearer token opzionale.
+- `TSFM_HORIZON`: orizzonte mensile, default `240` (20 anni).
+- `TSFM_HISTORY_PERIOD`: storico richiesto a Yahoo, default `5y`.
+- `LANGGRAPH_POSTGRES_URI`: URI PostgreSQL opzionale per `AsyncPostgresSaver`.
 
 > Il backend utilizza `langchain-google-genai` e `ChatGoogleGenerativeAI`.
+
+### Container TSFM locale
+
+`docker compose up --build` costruisce e avvia automaticamente
+`tsfm_service/`. Al primo avvio scarica Chronos-Bolt Tiny nel volume
+persistente; gli avvii successivi riutilizzano la cache. Il backend attende
+l'health check del modello e poi usa internamente
+`http://tsfm:8081/forecast`.
+
+Il modello produce 240 punti mensili in una sola esecuzione. Il report mostra
+il primo anno mese per mese e gli orizzonti 5/10/20 anni con campionamento
+annuale, sempre con scenario centrale, limite inferiore e limite superiore.
+Le viste più lunghe sono dichiarate esplorative perché l'incertezza cumulativa
+è sostanzialmente maggiore.
+
+Il servizio accetta internamente richieste come:
+
+```json
+{
+  "model": "amazon/chronos-bolt-tiny",
+  "series": [101.2, 103.8, 102.4, 104.0, 105.1, 106.3, 105.8, 107.2],
+  "frequency": "M",
+  "prediction_length": 3,
+  "quantile_levels": [0.1, 0.5, 0.9]
+}
+```
+
+L'endpoint deve rispondere con vettori lunghi quanto `prediction_length`:
+
+```json
+{
+  "model": "amazon/chronos-bolt-tiny",
+  "mean": [104.1, 105.0, 106.2],
+  "lower_bound": [91.3, 90.8, 90.1],
+  "upper_bound": [117.8, 119.6, 122.0]
+}
+```
+
+Se il container TSFM fallisce durante una singola richiesta, il report usa un
+damped-trend robusto e lo marca chiaramente come `fallback`, senza spacciarlo
+per un Foundation Model.
+
+### Checkpoint PostgreSQL
+
+Per abilitare la persistenza nativa di LangGraph, creare il database sul sistema
+host e impostare, ad esempio:
+
+```dotenv
+LANGGRAPH_POSTGRES_URI=postgresql://utente:password@host.docker.internal:5432/dl2026
+```
+
+All'avvio FastAPI esegue il setup di `AsyncPostgresSaver`; se PostgreSQL non è
+configurato o non è raggiungibile, la pipeline continua senza checkpoint.
+
+### Memoria e domande successive
+
+Ogni analisi completa salva report, dati, news, forecast numerico e grafici in
+`backend/data/etf_memory.json`, indicizzati per ISIN. Continuando nella stessa
+chat con `gatewayAgent`, il nodo `conversation` usa questi artefatti per
+rispondere a domande su previsioni, intervalli, composizione e news. Se il
+servizio LLM non risponde, viene comunque restituita una risposta deterministica
+dalla memoria invece di un errore HTTP.
 
 ## API
 

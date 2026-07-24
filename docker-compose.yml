@@ -1,4 +1,30 @@
 services:
+  tsfm:
+    build: ./tsfm_service
+    container_name: dl2026_tsfm
+    ports:
+      - "8001:8081"
+    environment:
+      - TSFM_MODEL_ID=${TSFM_MODEL_ID:-amazon/chronos-bolt-tiny}
+      - TORCH_NUM_THREADS=${TSFM_TORCH_THREADS:-2}
+      - HF_HOME=/models/huggingface
+      - HF_HUB_DISABLE_XET=1
+    volumes:
+      - tsfm-model-cache:/models/huggingface
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8081/health')); assert data['status']=='ready'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: dl2026_open_webui
@@ -7,11 +33,15 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - OPENAI_API_BASE_URL=http://backend:8000/v1
       - OPENAI_API_KEY=required-placeholder-key
+      # Use the lightweight model already bundled in OpenWebUI's cache.
+      - RAG_EMBEDDING_MODEL=TaylorAI/bge-micro-v2
+      - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
     restart: unless-stopped
 
   backend:
@@ -20,12 +50,26 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      # `z` keeps the development bind mount accessible on SELinux hosts.
+      - ./backend:/app:z
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemma-4-31b-it}
+      - TSFM_ENDPOINT=${TSFM_ENDPOINT:-http://tsfm:8081/forecast}
+      - TSFM_MODEL_ID=${TSFM_MODEL_ID:-amazon/chronos-bolt-tiny}
+      - TSFM_API_TOKEN=${TSFM_API_TOKEN:-}
+      - TSFM_TIMEOUT_SECONDS=${TSFM_TIMEOUT_SECONDS:-120}
+      - TSFM_HORIZON=${TSFM_HORIZON:-240}
+      - TSFM_HISTORY_PERIOD=${TSFM_HISTORY_PERIOD:-5y}
+      - LANGGRAPH_POSTGRES_URI=${LANGGRAPH_POSTGRES_URI:-}
+    depends_on:
+      tsfm:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
 
 volumes:
   open-webui-data:
+  tsfm-model-cache:

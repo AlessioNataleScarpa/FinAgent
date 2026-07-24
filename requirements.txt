@@ -3,6 +3,8 @@ uvicorn
 langchain-google-genai
 langchain-core
 langgraph
+langgraph-checkpoint-postgres
+psycopg[binary,pool]
 pydantic
 pytest
 pytest-asyncio

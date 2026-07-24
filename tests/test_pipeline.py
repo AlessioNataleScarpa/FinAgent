@@ -4,6 +4,7 @@ Tests individual pipeline nodes, compiled StateGraph execution, and GatewayAgent
 """
 
 import json
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -13,6 +14,7 @@ from pipeline.agent_1 import generate_agent_1_out
 from pipeline.news import fetch_news
 from pipeline.info_andamenti_storici import fetch_info_andamenti_storici
 from pipeline.predict import predict_node
+from pipeline.forecast_charts import forecast_charts_node
 from pipeline.agent_2 import generate_agent_2_out
 from pipeline.join_presenter import join_presenter_node
 from agents.gatewayAgent import GatewayAgent
@@ -55,7 +57,7 @@ class TestPipelineNodes:
         assert "news_data" in res
         news = res["news_data"]
         assert "IE00B4L5Y983" in news
-        assert "MACRO" in news
+        assert "Yahoo Finance" in news or "MACRO" in news
 
     @patch("httpx.Client")
     def test_info_andamenti_storici_node_success(self, mock_client_cls):
@@ -94,6 +96,58 @@ class TestPipelineNodes:
         assert "IE00B4L5Y983" in pred
         assert "BULLISH" in pred
 
+    def test_predict_node_returns_structured_fallback(self):
+        prices = [100 + i * 1.5 for i in range(24)]
+        state: PipelineState = {
+            "isin": "IE00B4L5Y983",
+            "historical_prices": prices,
+        }
+        with patch.dict(
+            os.environ,
+            {"TSFM_ENDPOINT": "", "TSFM_HORIZON": "12"},
+            clear=False,
+        ):
+            res = predict_node(state)
+
+        forecast = res["tsfm_forecast"]
+        assert forecast["status"] == "fallback"
+        assert len(forecast["mean"]) == 12
+        assert len(forecast["lower_bound"]) == 12
+        assert len(forecast["upper_bound"]) == 12
+        assert "fallback statistico" in res["prediction_out2"]
+
+    @patch("pipeline.predict.httpx.Client")
+    def test_predict_node_uses_remote_tsfm(self, mock_client_cls):
+        response = MagicMock()
+        response.json.return_value = {
+            "model": "test-chronos",
+            "mean": [125.0] * 12,
+            "lower_bound": [110.0] * 12,
+            "upper_bound": [140.0] * 12,
+        }
+        client = MagicMock()
+        client.post.return_value = response
+        mock_client_cls.return_value.__enter__.return_value = client
+
+        state: PipelineState = {
+            "isin": "IE00B4L5Y983",
+            "historical_prices": [100 + i for i in range(24)],
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "TSFM_ENDPOINT": "http://tsfm.test/forecast",
+                "TSFM_HORIZON": "12",
+            },
+            clear=False,
+        ):
+            res = predict_node(state)
+
+        assert res["tsfm_forecast"]["status"] == "ok"
+        assert res["tsfm_forecast"]["model"] == "test-chronos"
+        assert "Backend status: ok" in res["prediction_out2"]
+        client.post.assert_called_once()
+
     def test_agent_2_node(self):
         state: PipelineState = {
             "isin": "IE00B4L5Y983",
@@ -106,6 +160,50 @@ class TestPipelineNodes:
         assert "PREDICTION DATA" in out_tech
         assert "NEWS DATA" in out_tech
 
+    def test_forecast_chart_node(self):
+        state: PipelineState = {
+            "isin": "IE00B4L5Y983",
+            "historical_prices": [100.0, 102.0],
+            "historical_dates": ["2025-11", "2025-12"],
+            "tsfm_forecast": {
+                "model": "amazon/chronos-bolt-tiny",
+                "status": "ok",
+                "horizon": 3,
+                "mean": [103.0, 104.0, 105.0],
+                "lower_bound": [98.0, 97.0, 96.0],
+                "upper_bound": [108.0, 111.0, 114.0],
+            },
+        }
+        res = forecast_charts_node(state)
+        chart = res["forecast_charts"]
+        assert "Previsione futura: 3 mesi" in chart
+        assert "chronos-bolt-tiny" in chart
+        assert "2026-01" in chart
+        assert chart.count("    line [") == 3
+        assert "Intervallo di previsione 80%" in chart
+
+    def test_forecast_chart_node_long_horizons(self):
+        mean = [101 + index * 0.2 for index in range(240)]
+        state: PipelineState = {
+            "isin": "IE00B4L5Y983",
+            "historical_prices": [100.0],
+            "historical_dates": ["2025-12"],
+            "tsfm_forecast": {
+                "model": "amazon/chronos-bolt-tiny",
+                "status": "ok",
+                "horizon": 240,
+                "mean": mean,
+                "lower_bound": [value * 0.7 for value in mean],
+                "upper_bound": [value * 1.3 for value in mean],
+            },
+        }
+        chart = forecast_charts_node(state)["forecast_charts"]
+        assert "Orizzonte 5 anni" in chart
+        assert "Orizzonte 10 anni" in chart
+        assert "Orizzonte 20 anni" in chart
+        assert chart.count("xychart-beta") == 4
+        assert chart.count("    line [") == 12
+
     def test_join_presenter_node(self):
         state: PipelineState = {
             "isin": "IE00B4L5Y983",
@@ -113,6 +211,7 @@ class TestPipelineNodes:
             "agent_2_out_tech": "TECHNICAL OUT 2",
             "composition_charts": "```mermaid\npie title Test\n    \"A\" : 1\n```",
             "timeline_charts": "```mermaid\nxychart-beta\n    line [1, 2, 3]\n```",
+            "forecast_charts": "```mermaid\nxychart-beta\n    line [3, 4, 5]\n```",
             "sentiment_charts": "```mermaid\ngraph LR\n    A --> B\n```",
         }
         res = join_presenter_node(state)
@@ -120,6 +219,7 @@ class TestPipelineNodes:
         out_finale = res["out_finale"]
         assert "PRESENTATION OUT 1" in out_finale
         assert "TECHNICAL OUT 2" in out_finale
+        assert "line [3, 4, 5]" in out_finale
         assert "IE00B4L5Y983" in out_finale or "Report" in out_finale
 
 
@@ -147,6 +247,7 @@ class TestStateGraphExecution:
         assert result.get("memory_saved") is True
         assert result.get("composition_charts")
         assert result.get("timeline_charts")
+        assert result.get("forecast_charts")
         assert result.get("sentiment_charts")
 
     @pytest.mark.asyncio
@@ -201,4 +302,3 @@ class TestGatewayAgentPipelineIntegration:
             parsed = json.loads(result)
             assert parsed["status"] == "accepted"
             assert parsed["isin"] == "IE00B4L5Y983"
-

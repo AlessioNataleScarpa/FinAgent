@@ -34,6 +34,25 @@ class TechnicalNewsAgent(BaseAgent):
         return cleaned
 
     def _build_fallback_markdown(self, isin: str, prediction: str, news: str) -> str:
+        lowered_prediction = (prediction or "").lower()
+        if "backend status: unavailable" in lowered_prediction:
+            uncertainty = (
+                "- **Affidabilità quantitativa: non disponibile.** Le news non "
+                "devono essere usate come sostituto di una previsione mancante.\n"
+            )
+        elif "backend status: fallback" in lowered_prediction:
+            uncertainty = (
+                "- **Affidabilità quantitativa: ridotta.** È attivo il fallback "
+                "statistico; il segnale resta esplorativo e conservativo.\n"
+                "- Le news possono spiegare uno scenario, ma non trasformarlo in "
+                "un'indicazione direzionale ad alta confidenza.\n"
+            )
+        else:
+            uncertainty = (
+                "- La forza del segnale va calibrata sull'ampiezza dell'intervallo "
+                "di previsione: range ampio significa bassa confidenza.\n"
+            )
+
         return AwaitableString(
             f"# Analisi tecnica e confronto news\n\n"
             f"**ISIN:** `{isin}`\n\n"
@@ -42,9 +61,11 @@ class TechnicalNewsAgent(BaseAgent):
             f"### Notizie di mercato\n"
             f"{news}\n\n"
             f"### Impatto delle news sulla previsione\n"
+            f"{uncertainty}"
             f"- Le news macro e gli utili influenzano il bias di breve/medio termine.\n"
             f"- I rischi geopolitici restano un fattore di volatilità.\n"
-            f"- La previsione quantitativa va interpretata insieme al sentiment.\n\n"
+            f"- Fatti riportati, inferenze e output del modello vanno tenuti distinti.\n\n"
+            f"_Analisi informativa, non consulenza finanziaria né rendimento garantito._\n\n"
             f"_I grafici sentiment/impatto sono generati dal nodo `sentiment_charts`._\n"
         )
 
@@ -58,7 +79,9 @@ class TechnicalNewsAgent(BaseAgent):
 
         system_prompt = (
             "Sei un assistente AI specializzato nell'analisi tecnica e nell'impatto delle notizie finanziarie sugli ETF.\n"
-            "Analizza la previsione quantitativa e le notizie per fornire una sintesi tecnica ed un'analisi dell'impatto delle notizie."
+            "Analizza la previsione quantitativa e le notizie per fornire una sintesi tecnica ed un'analisi dell'impatto delle notizie. "
+            "Se il forecast usa un fallback o ha un intervallo ampio, dichiara l'incertezza e adotta un bias conservativo. "
+            "Distingui sempre fatti, inferenze e output del modello; non formulare rendimenti garantiti."
         )
         user_prompt = (
             f"Previsione Quantitativa:\n{prediction_data}\n\n"

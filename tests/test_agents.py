@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agents.base import BaseAgent
+from agents.conversationAgent import ConversationAgent
 from agents.gatewayAgent import GatewayAgent
 from agents.joinAgent import JoinAgent
 from agents.presentationAgent import PresentationAgent
@@ -131,6 +132,28 @@ class TestBaseAgent:
 
         no_state_messages = [Message(role="assistant", content="Not JSON")]
         assert BaseAgent.extract_previous_assistant_state(no_state_messages, extractor) is None
+
+
+def test_conversation_memory_fallback_explains_forecast():
+    response = ConversationAgent._memory_fallback(
+        "Spiegami previsione, intervallo e grafico",
+        "IE00B4L5Y983",
+        {
+            "isin": "IE00B4L5Y983",
+            "tsfm_forecast": {
+                "model": "amazon/chronos-bolt-tiny",
+                "status": "ok",
+                "horizon": 3,
+                "mean": [101, 102, 103],
+                "lower_bound": [95, 94, 93],
+                "upper_bound": [107, 110, 113],
+            },
+            "forecast_charts": "```mermaid\nxychart-beta\n```",
+        },
+    )
+    assert "chronos-bolt-tiny" in response
+    assert "Intervallo 80%" in response
+    assert "```mermaid" in response
 
 
 class TestGatewayAgent:
@@ -357,6 +380,5 @@ class TestNewAgentMethodsAndJoinAgent:
         assert "technicalNewsAgent" in AVAILABLE_AGENTS
         assert "joinAgent" in AVAILABLE_AGENTS
         assert isinstance(AVAILABLE_AGENTS["joinAgent"], JoinAgent)
-
 
 

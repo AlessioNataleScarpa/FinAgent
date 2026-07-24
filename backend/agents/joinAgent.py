@@ -31,6 +31,7 @@ class JoinAgent(BaseAgent):
         isin: str = "",
         composition_charts: str = "",
         timeline_charts: str = "",
+        forecast_charts: str = "",
         sentiment_charts: str = "",
     ) -> Tuple[str, str]:
         system_prompt = build_join_system_prompt()
@@ -40,6 +41,7 @@ class JoinAgent(BaseAgent):
             out_tech=out_tech,
             composition_charts=composition_charts,
             timeline_charts=timeline_charts,
+            forecast_charts=forecast_charts,
             sentiment_charts=sentiment_charts,
         )
         return system_prompt, user_prompt
@@ -52,6 +54,7 @@ class JoinAgent(BaseAgent):
         isin: str = "",
         composition_charts: str = "",
         timeline_charts: str = "",
+        forecast_charts: str = "",
         sentiment_charts: str = "",
     ) -> str:
         isin_label = isin or "N/D"
@@ -64,6 +67,7 @@ class JoinAgent(BaseAgent):
             f"{out1}\n\n"
             f"{composition_charts}\n\n"
             f"{timeline_charts}\n\n"
+            f"{forecast_charts}\n\n"
             f"## Analisi tecnica e confronto news\n\n"
             f"{out_tech}\n\n"
             f"{sentiment_charts}\n\n"
@@ -91,12 +95,14 @@ class JoinAgent(BaseAgent):
         isin: str = "",
         composition_charts: str = "",
         timeline_charts: str = "",
+        forecast_charts: str = "",
         sentiment_charts: str = "",
     ) -> str:
         fallback_kwargs = {
             "isin": isin,
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
+            "forecast_charts": forecast_charts,
             "sentiment_charts": sentiment_charts,
         }
         if not pipeline_use_llm():
@@ -123,12 +129,14 @@ class JoinAgent(BaseAgent):
         isin: str = "",
         composition_charts: str = "",
         timeline_charts: str = "",
+        forecast_charts: str = "",
         sentiment_charts: str = "",
     ) -> str:
         fallback_kwargs = {
             "isin": isin,
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
+            "forecast_charts": forecast_charts,
             "sentiment_charts": sentiment_charts,
         }
         if not pipeline_use_llm():

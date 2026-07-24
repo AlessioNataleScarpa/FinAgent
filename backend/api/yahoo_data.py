@@ -68,3 +68,13 @@ def get_historical_data(ticker: str, period: str = "1y") -> Dict[str, Any]:
     Recupera le serie storiche mensili delegando la chiamata al server MCP.
     """
     return _run_async(_call_mcp_tool("get_historical_data", {"ticker": ticker, "period": period}))
+
+
+def get_news(ticker: str, limit: int = 8, query: str = "") -> Dict[str, Any]:
+    """Recupera le notizie recenti delegando la chiamata al server MCP."""
+    return _run_async(
+        _call_mcp_tool(
+            "get_news",
+            {"ticker": ticker, "limit": limit, "query": query},
+        )
+    )

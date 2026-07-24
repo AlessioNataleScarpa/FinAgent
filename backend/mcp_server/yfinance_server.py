@@ -99,7 +99,7 @@ def get_profile(ticker: str) -> Dict[str, Any]:
 
 @mcp.tool()
 def get_historical_data(ticker: str, period: str = "1y") -> Dict[str, Any]:
-    """Recupera una serie mensile compatta per i grafici."""
+    """Recupera OHLCV mensile compatto, adatto a grafici e inferenza TSFM."""
     try:
         t = yf.Ticker(ticker)
         hist = t.history(period=period, interval="1mo")
@@ -116,16 +116,108 @@ def get_historical_data(ticker: str, period: str = "1y") -> Dict[str, Any]:
         monthly = (
             hist.assign(month=hist["Date"].astype(str).str.slice(0, 7))
             .groupby("month", as_index=False)
-            .agg(close=("Close", "last"))
+            .agg(
+                open=("Open", "first"),
+                high=("High", "max"),
+                low=("Low", "min"),
+                close=("Close", "last"),
+                volume=("Volume", "sum"),
+            )
         )
-        monthly_closes: List[Dict[str, Any]] = [
-            {"month": row["month"], "close": round(float(row["close"]), 4)}
+        monthly_ohlcv: List[Dict[str, Any]] = [
+            {
+                "month": row["month"],
+                "open": round(float(row["open"]), 4),
+                "high": round(float(row["high"]), 4),
+                "low": round(float(row["low"]), 4),
+                "close": round(float(row["close"]), 4),
+                "volume": int(row["volume"]),
+            }
             for _, row in monthly.iterrows()
         ]
 
-        return {"Monthly_Closes": monthly_closes}
+        return {
+            "Monthly_OHLCV": monthly_ohlcv,
+            # Backward-compatible projection consumed by existing chart code.
+            "Monthly_Closes": [
+                {"month": row["month"], "close": row["close"]}
+                for row in monthly_ohlcv
+            ],
+        }
     except Exception as e:
         return {"error": str(e)}
+
+
+def _normalise_news(raw_items: List[Any], limit: int) -> List[Dict[str, Any]]:
+    articles: List[Dict[str, Any]] = []
+    seen = set()
+    for raw in raw_items:
+        content = raw.get("content") if isinstance(raw, dict) else None
+        item = content if isinstance(content, dict) else raw
+        if not isinstance(item, dict):
+            continue
+        provider = item.get("provider")
+        if isinstance(provider, dict):
+            provider = provider.get("displayName")
+        canonical = item.get("canonicalUrl") or item.get("clickThroughUrl")
+        if isinstance(canonical, dict):
+            canonical = canonical.get("url")
+        title = str(item.get("title") or "Senza titolo").strip()
+        url = canonical or item.get("link") or ""
+        identity = (title.lower(), str(url))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        articles.append(
+            {
+                "title": title,
+                "summary": item.get("summary") or item.get("description") or "",
+                "published_at": item.get("pubDate") or item.get("providerPublishTime"),
+                "publisher": provider or item.get("publisher") or "",
+                "url": url,
+            }
+        )
+        if len(articles) >= limit:
+            break
+    return articles
+
+
+@mcp.tool()
+def get_news(ticker: str, limit: int = 8, query: str = "") -> Dict[str, Any]:
+    """Recupera le notizie Yahoo Finance più recenti per lo strumento."""
+    try:
+        safe_limit = max(1, min(limit, 20))
+        raw_items = yf.Ticker(ticker).news or []
+        articles = _normalise_news(raw_items, safe_limit)
+
+        # ETF ticker feeds are often empty. Yahoo Search uses a different
+        # endpoint and can retrieve instrument/market news for ticker or ISIN.
+        for search_query in dict.fromkeys([ticker, query]):
+            if len(articles) >= safe_limit or not search_query:
+                break
+            try:
+                search_items = yf.Search(
+                    search_query,
+                    news_count=safe_limit,
+                ).news or []
+                existing_keys = {
+                    (existing["title"], existing["url"])
+                    for existing in articles
+                }
+                articles.extend(
+                    article
+                    for article in _normalise_news(search_items, safe_limit)
+                    if (article["title"], article["url"]) not in existing_keys
+                )
+                articles = articles[:safe_limit]
+            except Exception as exc:
+                logger.warning("Yahoo Search failed for %s: %s", search_query, exc)
+
+        if not articles:
+            return {"error": "News not found", "articles": []}
+        return {"articles": articles, "search_fallback_used": not bool(raw_items)}
+    except Exception as e:
+        return {"error": str(e), "articles": []}
 
 
 if __name__ == "__main__":
