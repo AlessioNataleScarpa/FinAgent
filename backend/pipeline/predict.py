@@ -48,11 +48,28 @@ def _extract_prices(state: PipelineState) -> List[float]:
     except (TypeError, json.JSONDecodeError):
         return []
 
-    points = payload.get("Monthly_Closes") if isinstance(payload, dict) else []
+    if not isinstance(payload, dict):
+        return []
+
+    points = (
+        payload.get("Weekly_Closes")
+        or payload.get("weekly_closes")
+        or payload.get("Monthly_Closes")
+        or payload.get("monthly_closes")
+        or []
+    )
+    if not isinstance(points, list):
+        hist = payload.get("Historical_Prices") or {}
+        if isinstance(hist, dict):
+            points = hist.get("Weekly_Closes") or hist.get("historical") or hist.get("Monthly_Closes") or []
+        elif isinstance(hist, list):
+            points = hist
+
     if not isinstance(points, list):
         return []
+
     return _positive_finite(
-        point.get("close") for point in points if isinstance(point, dict)
+        point.get("close") or point.get("Close") for point in points if isinstance(point, dict)
     )
 
 

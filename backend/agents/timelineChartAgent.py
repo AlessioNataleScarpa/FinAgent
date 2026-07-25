@@ -35,20 +35,25 @@ class TimelineChartAgent(BaseAgent):
 
     @staticmethod
     def _extract_series(payload: Dict[str, Any]) -> Tuple[List[str], List[float]]:
-        monthly = payload.get("Monthly_Closes") or payload.get("monthly_closes")
-        if isinstance(monthly, list) and monthly:
+        series = (
+            payload.get("Weekly_Closes")
+            or payload.get("weekly_closes")
+            or payload.get("Monthly_Closes")
+            or payload.get("monthly_closes")
+        )
+        if isinstance(series, list) and series:
             labels: List[str] = []
             values: List[float] = []
-            for row in monthly:
+            for row in series:
                 if not isinstance(row, dict):
                     continue
-                label = str(row.get("month") or row.get("Date") or row.get("date") or "")
+                label = str(row.get("week") or row.get("date") or row.get("Date") or row.get("month") or "")
                 try:
                     value = float(row.get("close") or row.get("Close") or 0)
                 except (TypeError, ValueError):
                     continue
                 if label:
-                    labels.append(label[:7] if len(label) >= 7 else label)
+                    labels.append(label[:10] if len(label) >= 10 else label)
                     values.append(value)
             if labels and values:
                 return labels, values
@@ -56,7 +61,12 @@ class TimelineChartAgent(BaseAgent):
         historical = payload.get("Historical_Prices") or {}
         records = []
         if isinstance(historical, dict):
-            records = historical.get("historical") or historical.get("Monthly_Closes") or []
+            records = (
+                historical.get("Weekly_Closes")
+                or historical.get("historical")
+                or historical.get("Monthly_Closes")
+                or []
+            )
         elif isinstance(historical, list):
             records = historical
 
@@ -72,14 +82,8 @@ class TimelineChartAgent(BaseAgent):
                 continue
             if not date:
                 continue
-            labels.append(date[:7])
+            labels.append(date[:10])
             values.append(close)
-
-        # Downsample to ~12 points if daily data slipped through
-        if len(labels) > 14:
-            step = max(1, len(labels) // 12)
-            labels = labels[::step][:12]
-            values = values[::step][:12]
 
         return labels, values
 
@@ -88,8 +92,8 @@ class TimelineChartAgent(BaseAgent):
         labels, values = self._extract_series(payload)
 
         if not labels or not values:
-            labels = ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12"]
-            values = [100, 102, 101, 105, 108, 107, 110, 112, 115, 114, 118, 120]
+            labels = ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8"]
+            values = [100, 102, 101, 105, 108, 107, 110, 112]
 
         chart = build_xychart_line(
             title=f"Andamento prezzo {isin}",

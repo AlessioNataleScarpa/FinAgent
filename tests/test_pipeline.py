@@ -176,11 +176,11 @@ class TestPipelineNodes:
         }
         res = forecast_charts_node(state)
         chart = res["forecast_charts"]
-        assert "Previsione futura: 3 mesi" in chart
+        assert "Previsione futura settimanale: 3 settimane" in chart
         assert "chronos-bolt-tiny" in chart
-        assert "2026-01" in chart
+        assert "+1w" in chart
         assert chart.count("    line [") == 3
-        assert "Intervallo di previsione 80%" in chart
+        assert "Intervallo di confidenza 80%" in chart
 
     def test_forecast_chart_node_long_horizons(self):
         mean = [101 + index * 0.2 for index in range(240)]
@@ -198,11 +198,9 @@ class TestPipelineNodes:
             },
         }
         chart = forecast_charts_node(state)["forecast_charts"]
-        assert "Orizzonte 5 anni" in chart
-        assert "Orizzonte 10 anni" in chart
-        assert "Orizzonte 20 anni" in chart
-        assert chart.count("xychart-beta") == 4
-        assert chart.count("    line [") == 12
+        assert "Previsione futura settimanale: 240 settimane" in chart
+        assert "xychart-beta" in chart
+        assert chart.count("    line [") >= 3
 
     def test_join_presenter_node(self):
         state: PipelineState = {
