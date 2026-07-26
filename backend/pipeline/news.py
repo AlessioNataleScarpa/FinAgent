@@ -29,7 +29,7 @@ def fetch_news(state: PipelineState) -> Dict[str, Any]:
     if articles:
         news_text = json.dumps(
             {
-                "source": "Yahoo Finance via MCP",
+                "source": "Yahoo Finance",
                 "isin": isin,
                 "ticker": ticker,
                 "articles": articles,
@@ -38,13 +38,13 @@ def fetch_news(state: PipelineState) -> Dict[str, Any]:
             indent=2,
         )
     else:
-        error = payload.get("error", "ticker non disponibile") if isinstance(payload, dict) else "errore MCP"
+        error = payload.get("error", "ticker non disponibile") if isinstance(payload, dict) else "fonte esterna non raggiungibile"
         news_text = (
-            f"--- RECENT MARKET NEWS & SENTIMENT ({isin}) ---\n"
-            f"[FALLBACK - LIVE NEWS UNAVAILABLE: {error}]\n"
-            f"1. [MACRO]: Monitorare tassi, inflazione e liquidità globale.\n"
-            f"2. [MARKET TRENDS]: Verificare flussi e performance del settore di riferimento.\n"
-            f"3. [RISK FACTORS]: Geopolitica e volatilità restano fattori di rischio.\n"
+            f"Le notizie aggiornate non sono disponibili ({error}). In assenza di "
+            "articoli verificabili, l'analisi considera soltanto i rischi generali: "
+            "tassi, inflazione, liquidità, flussi di mercato, geopolitica e volatilità. "
+            "Questi fattori non vengono trattati come notizie né usati per rafforzare "
+            "artificialmente la previsione.\n"
         )
 
     return {"news_data": news_text}

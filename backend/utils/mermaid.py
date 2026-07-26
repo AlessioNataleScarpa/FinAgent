@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Mapping, Sequence, Tuple, Union
+from typing import Iterable, List, Mapping, Sequence, Tuple, Union
 
 Number = Union[int, float]
 
@@ -162,22 +162,3 @@ def build_xychart_lines(
     for values in clean_series:
         lines.append(f"    line [{', '.join(str(value) for value in values)}]")
     return "\n".join(lines)
-
-
-def default_sector_slices() -> Dict[str, float]:
-    return {
-        "Information Technology": 23.5,
-        "Financials": 15.2,
-        "Healthcare": 12.1,
-        "Industrials": 11.0,
-        "Consumer Discretionary": 10.4,
-        "Communication": 7.5,
-        "Altri": 20.3,
-    }
-
-
-def default_asset_slices() -> Dict[str, float]:
-    return {
-        "Azioni": 98.0,
-        "Liquidita / Altro": 2.0,
-    }

@@ -22,6 +22,10 @@ def build_join_system_prompt() -> str:
         "   - Sentiment\n"
         "   - Conclusioni operative\n"
         "6. Tono professionale, concreto, senza emoji eccessive.\n"
+        "7. Scrivi come un analista umano: non nominare agenti, pipeline, backend, "
+        "LangGraph, motori di ricerca, MCP o dettagli di implementazione.\n"
+        "8. Non introdurre il report con frasi come 'Ecco il report' e non "
+        "commentare come hai ottenuto i dati. Parti direttamente dal contenuto.\n"
     )
 
 
@@ -33,6 +37,7 @@ def build_join_human_prompt(
     composition_charts: str = "",
     timeline_charts: str = "",
     forecast_charts: str = "",
+    xai_analysis: str = "",
     sentiment_charts: str = "",
 ) -> str:
     return (
@@ -42,6 +47,7 @@ def build_join_human_prompt(
         f"=== GRAFICI COMPOSIZIONE (Mermaid pronti) ===\n{composition_charts}\n\n"
         f"=== GRAFICI ANDAMENTO TEMPORALE (Mermaid pronti) ===\n{timeline_charts}\n\n"
         f"=== PREVISIONE FUTURA (Mermaid pronto) ===\n{forecast_charts}\n\n"
+        f"=== SPIEGAZIONE DELLA PREVISIONE ===\n{xai_analysis}\n\n"
         f"=== GRAFICI SENTIMENT (Mermaid pronti) ===\n{sentiment_charts}\n\n"
         "Genera ora il REPORT FINALE in Markdown."
     )

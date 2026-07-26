@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import List, Optional, Union
 
@@ -33,14 +34,40 @@ class TechnicalNewsAgent(BaseAgent):
             return default_diagram
         return cleaned
 
+    @staticmethod
+    def _format_news(news: str) -> str:
+        try:
+            payload = json.loads(news or "")
+        except (TypeError, json.JSONDecodeError):
+            return news or "Nessuna notizia verificabile disponibile."
+        if not isinstance(payload, dict):
+            return news
+        articles = payload.get("articles") or []
+        if not isinstance(articles, list) or not articles:
+            return "Nessuna notizia verificabile disponibile."
+
+        lines = []
+        for article in articles[:8]:
+            if not isinstance(article, dict):
+                continue
+            title = str(article.get("title") or "Senza titolo").strip()
+            summary = str(article.get("summary") or "").strip()
+            publisher = str(article.get("publisher") or "").strip()
+            url = str(article.get("url") or "").strip()
+            label = f"[{title}]({url})" if url else f"**{title}**"
+            detail = " — ".join(part for part in (publisher, summary) if part)
+            lines.append(f"- {label}" + (f": {detail}" if detail else ""))
+        return "\n".join(lines) or "Nessuna notizia verificabile disponibile."
+
     def _build_fallback_markdown(self, isin: str, prediction: str, news: str) -> str:
+        news_markdown = self._format_news(news)
         lowered_prediction = (prediction or "").lower()
-        if "backend status: unavailable" in lowered_prediction:
+        if "stato: non disponibile" in lowered_prediction or "previsione non disponibile" in lowered_prediction:
             uncertainty = (
                 "- **Affidabilità quantitativa: non disponibile.** Le news non "
                 "devono essere usate come sostituto di una previsione mancante.\n"
             )
-        elif "backend status: fallback" in lowered_prediction:
+        elif "stima statistica di riserva" in lowered_prediction:
             uncertainty = (
                 "- **Affidabilità quantitativa: ridotta.** È attivo il fallback "
                 "statistico; il segnale resta esplorativo e conservativo.\n"
@@ -59,14 +86,13 @@ class TechnicalNewsAgent(BaseAgent):
             f"### Previsione quantitativa\n"
             f"{prediction}\n\n"
             f"### Notizie di mercato\n"
-            f"{news}\n\n"
+            f"{news_markdown}\n\n"
             f"### Impatto delle news sulla previsione\n"
             f"{uncertainty}"
             f"- Le news macro e gli utili influenzano il bias di breve/medio termine.\n"
             f"- I rischi geopolitici restano un fattore di volatilità.\n"
-            f"- Fatti riportati, inferenze e output del modello vanno tenuti distinti.\n\n"
-            f"_Analisi informativa, non consulenza finanziaria né rendimento garantito._\n\n"
-            f"_I grafici sentiment/impatto sono generati dal nodo `sentiment_charts`._\n"
+            f"- Fatti riportati, inferenze e stime del modello vanno tenuti distinti.\n\n"
+            f"_Analisi informativa, non consulenza finanziaria né rendimento garantito._\n"
         )
 
     async def run_technical_news(

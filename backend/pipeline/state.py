@@ -17,6 +17,7 @@ class TSFMForecast(TypedDict, total=False):
     upper_bound: List[float]
     status: Literal["ok", "fallback", "unavailable"]
     error: str
+    explanation: Dict[str, Any]
 
 
 class PipelineState(TypedDict, total=False):
@@ -42,6 +43,7 @@ class PipelineState(TypedDict, total=False):
     composition_charts: Optional[str]
     timeline_charts: Optional[str]
     forecast_charts: Optional[str]
+    xai_analysis: Optional[str]
     sentiment_charts: Optional[str]
     memory_saved: Optional[bool]
 

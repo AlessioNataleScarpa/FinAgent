@@ -23,6 +23,7 @@ def join_presenter_node(state: PipelineState) -> Dict[str, Any]:
     composition = state.get("composition_charts", "") or ""
     timeline = state.get("timeline_charts", "") or ""
     forecast = state.get("forecast_charts", "") or ""
+    xai = state.get("xai_analysis", "") or ""
     sentiment = state.get("sentiment_charts", "") or ""
 
     logger.info("Executing JOIN node for final Markdown report (ISIN: %s)", isin)
@@ -34,6 +35,7 @@ def join_presenter_node(state: PipelineState) -> Dict[str, Any]:
         composition_charts=composition,
         timeline_charts=timeline,
         forecast_charts=forecast,
+        xai_analysis=xai,
         sentiment_charts=sentiment,
     )
 

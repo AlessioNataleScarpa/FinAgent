@@ -108,8 +108,8 @@ class TimelineChartAgent(BaseAgent):
 
         return (
             f"## Andamento temporale\n\n"
-            f"Serie storica sintetizzata dall'agente **TimelineChartAgent** "
-            f"(variazione sul periodo: **{change_pct:+.2f}%**).\n\n"
+            f"Nel periodo osservato il prezzo è variato del "
+            f"**{change_pct:+.2f}%**.\n\n"
             f"{wrap_mermaid(chart)}\n"
         )
 

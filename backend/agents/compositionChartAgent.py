@@ -12,8 +12,6 @@ try:
     from schemas.chat import Message
     from utils.mermaid import (
         build_pie_chart,
-        default_asset_slices,
-        default_sector_slices,
         wrap_mermaid,
     )
 except ImportError:
@@ -21,8 +19,6 @@ except ImportError:
     from backend.schemas.chat import Message
     from backend.utils.mermaid import (
         build_pie_chart,
-        default_asset_slices,
-        default_sector_slices,
         wrap_mermaid,
     )
 
@@ -74,40 +70,106 @@ class CompositionChartAgent(BaseAgent):
                     weights[str(label)] = numeric
         return weights
 
+    @staticmethod
+    def _as_percentages(weights: Mapping[str, float]) -> Dict[str, float]:
+        total = sum(float(value) for value in weights.values() if float(value) > 0)
+        if total <= 0:
+            return {}
+        return {
+            label: round(float(value) / total * 100.0, 2)
+            for label, value in weights.items()
+            if float(value) > 0
+        }
+
+    @staticmethod
+    def _is_informative(weights: Mapping[str, float]) -> bool:
+        values = sorted((float(value) for value in weights.values() if value > 0), reverse=True)
+        return len(values) >= 2 and values[0] < 95.0
+
     def build_markdown(self, isin: str, info_presentazione: str = "") -> str:
         payload = self._parse_info(info_presentazione)
-        profile = payload.get("Profile") if isinstance(payload.get("Profile"), dict) else {}
-        if not profile and isinstance(payload, dict):
-            profile = payload
-
-        sector_weights = self._normalize_weights(
-            profile.get("sectorWeightings")
-            or profile.get("sector_weights")
-            or profile.get("categoryWeightings")
+        composition = (
+            payload.get("Composition")
+            if isinstance(payload.get("Composition"), dict)
+            else {}
         )
-        asset_weights = self._normalize_weights(
-            profile.get("assetAllocation")
-            or profile.get("asset_allocation")
-            or profile.get("holdings")
+        if composition.get("status") != "ok":
+            return (
+                "## Composizione del portafoglio\n\n"
+                "La composizione non è disponibile da una fonte ufficiale verificabile. "
+                "Il grafico non viene mostrato per evitare percentuali stimate o "
+                "allocazioni predefinite.\n"
+            )
+
+        sectors = self._as_percentages(
+            self._normalize_weights(composition.get("sector_weights"))
+        )
+        assets = self._as_percentages(
+            self._normalize_weights(composition.get("asset_allocation"))
+        )
+        geography = self._as_percentages(
+            self._normalize_weights(composition.get("geography_weights"))
         )
 
-        if not sector_weights:
-            sector_weights = default_sector_slices()
-        if not asset_weights:
-            asset_weights = default_asset_slices()
+        sections = ["## Composizione del portafoglio\n\n"]
+        source_name = composition.get("provider") or "emittente"
+        source_url = composition.get("source_url") or ""
+        as_of = composition.get("as_of") or "data non indicata"
+        if source_url:
+            sections.append(
+                f"Dati delle posizioni pubblicati da [{source_name}]({source_url}), "
+                f"aggiornati al **{as_of}**.\n\n"
+            )
+        else:
+            sections.append(
+                f"Dati delle posizioni pubblicati da **{source_name}**, "
+                f"aggiornati al **{as_of}**.\n\n"
+            )
 
-        sector_pie = build_pie_chart(f"Composizione settoriale {isin}", sector_weights)
-        asset_pie = build_pie_chart(f"Composizione asset {isin}", asset_weights)
+        if self._is_informative(sectors):
+            sections.extend(
+                [
+                    "### Ripartizione settoriale\n\n",
+                    wrap_mermaid(
+                        build_pie_chart(f"Settori - {isin}", sectors)
+                    ),
+                    "\n\n",
+                ]
+            )
+        if self._is_informative(geography):
+            sections.extend(
+                [
+                    "### Ripartizione geografica\n\n",
+                    wrap_mermaid(
+                        build_pie_chart(f"Aree geografiche - {isin}", geography)
+                    ),
+                    "\n\n",
+                ]
+            )
+        if self._is_informative(assets):
+            sections.extend(
+                [
+                    "### Ripartizione per classe di attivo\n\n",
+                    wrap_mermaid(
+                        build_pie_chart(f"Classi di attivo - {isin}", assets)
+                    ),
+                    "\n",
+                ]
+            )
+        elif assets:
+            dominant_label, dominant_weight = max(assets.items(), key=lambda item: item[1])
+            sections.append(
+                f"La classe di attivo è concentrata in **{dominant_label} "
+                f"({dominant_weight:.2f}%)**. Una torta quasi monocromatica non "
+                "aggiungerebbe informazione, quindi non viene disegnata.\n"
+            )
 
-        return (
-            f"## Composizione del portafoglio\n\n"
-            f"Grafici Mermaid generati dall'agente specializzato **CompositionChartAgent** "
-            f"sull'ISIN `{isin}`.\n\n"
-            f"### Allocazione settoriale\n\n"
-            f"{wrap_mermaid(sector_pie)}\n\n"
-            f"### Allocazione per classe di asset\n\n"
-            f"{wrap_mermaid(asset_pie)}\n"
-        )
+        if len(sections) <= 2:
+            sections.append(
+                "Le posizioni sono state recuperate, ma non contengono almeno due "
+                "categorie con pesi sufficienti per un grafico attendibile.\n"
+            )
+        return "".join(sections)
 
     async def run(self, messages: List[Message]) -> str:
         latest = self.extract_latest_user_message(messages)

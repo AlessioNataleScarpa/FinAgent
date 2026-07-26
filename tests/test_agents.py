@@ -284,9 +284,9 @@ class TestPresentationAgent:
         with patch.object(agent, "create_structured_llm", return_value=mock_structured):
             out = agent.run(isin="IE00B4L5Y983", info_presentazione="Info ETF Test")
             assert "ETF Summary Test" in out
-            assert "Tech 30%" in out
-            assert "USA 80%" in out
-            assert "```mermaid" in out
+            assert "Tech 30%" not in out
+            assert "USA 80%" not in out
+            assert "```mermaid" not in out
 
 
 class TestTechnicalNewsAgent:
@@ -373,6 +373,19 @@ class TestNewAgentMethodsAndJoinAgent:
             assert "Out 1 text" in res
             assert "Out tech text" in res
 
+    @patch("agents.joinAgent.pipeline_use_llm", return_value=False)
+    def test_join_fallback_has_no_internal_system_chatter(self, _mock_use_llm):
+        res = JoinAgent().run_sync(
+            "Presentazione",
+            "Analisi tecnica",
+            isin="IE00B4L5Y983",
+            xai_analysis="Spiegazione locale",
+        )
+        lowered = res.lower()
+        for forbidden in ("langgraph", "duckduckgo", "compositionchartagent", "backend status"):
+            assert forbidden not in lowered
+        assert "Spiegazione locale" in res
+
     def test_registry_has_all_agents(self):
         assert "gatewayAgent" in AVAILABLE_AGENTS
         assert "conversationAgent" in AVAILABLE_AGENTS
@@ -380,5 +393,3 @@ class TestNewAgentMethodsAndJoinAgent:
         assert "technicalNewsAgent" in AVAILABLE_AGENTS
         assert "joinAgent" in AVAILABLE_AGENTS
         assert isinstance(AVAILABLE_AGENTS["joinAgent"], JoinAgent)
-
-

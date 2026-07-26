@@ -55,6 +55,7 @@ class EtfMemoryStore:
         composition_charts: str = "",
         timeline_charts: str = "",
         forecast_charts: str = "",
+        xai_analysis: str = "",
         sentiment_charts: str = "",
         info_presentazione: str = "",
         info_storici: str = "",
@@ -77,6 +78,7 @@ class EtfMemoryStore:
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
             "forecast_charts": forecast_charts,
+            "xai_analysis": xai_analysis,
             "sentiment_charts": sentiment_charts,
             "info_presentazione": info_presentazione,
             "info_storici": info_storici,
@@ -117,6 +119,7 @@ class EtfMemoryStore:
         news = (analysis.get("news_data") or "")[:1000]
         prediction = (analysis.get("prediction") or "")[:1500]
         forecast_charts = (analysis.get("forecast_charts") or "")[:3500]
+        xai_analysis = (analysis.get("xai_analysis") or "")[:2500]
         structured_forecast = json.dumps(
             analysis.get("tsfm_forecast") or {},
             ensure_ascii=False,
@@ -131,6 +134,9 @@ class EtfMemoryStore:
             "",
             "=== GRAFICO FORECAST ===",
             forecast_charts,
+            "",
+            "=== SPIEGAZIONE PREVISIONE ===",
+            xai_analysis,
             "",
             "=== REPORT FINALE ===",
             report,

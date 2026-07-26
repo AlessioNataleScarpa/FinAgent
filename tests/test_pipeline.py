@@ -15,6 +15,7 @@ from pipeline.news import fetch_news
 from pipeline.info_andamenti_storici import fetch_info_andamenti_storici
 from pipeline.predict import predict_node
 from pipeline.forecast_charts import forecast_charts_node
+from pipeline.explain_forecast import explain_forecast_node
 from pipeline.agent_2 import generate_agent_2_out
 from pipeline.join_presenter import join_presenter_node
 from agents.gatewayAgent import GatewayAgent
@@ -94,7 +95,7 @@ class TestPipelineNodes:
         assert "prediction_out2" in res
         pred = res["prediction_out2"]
         assert "IE00B4L5Y983" in pred
-        assert "BULLISH" in pred
+        assert "Previsione non disponibile" in pred
 
     def test_predict_node_returns_structured_fallback(self):
         prices = [100 + i * 1.5 for i in range(24)]
@@ -114,7 +115,8 @@ class TestPipelineNodes:
         assert len(forecast["mean"]) == 12
         assert len(forecast["lower_bound"]) == 12
         assert len(forecast["upper_bound"]) == 12
-        assert "fallback statistico" in res["prediction_out2"]
+        assert "stima statistica di riserva" in res["prediction_out2"]
+        assert forecast["explanation"]["method"] == "analytical_fallback"
 
     @patch("pipeline.predict.httpx.Client")
     def test_predict_node_uses_remote_tsfm(self, mock_client_cls):
@@ -145,8 +147,9 @@ class TestPipelineNodes:
 
         assert res["tsfm_forecast"]["status"] == "ok"
         assert res["tsfm_forecast"]["model"] == "test-chronos"
-        assert "Backend status: ok" in res["prediction_out2"]
+        assert "Stato: modello disponibile" in res["prediction_out2"]
         client.post.assert_called_once()
+        assert client.post.call_args.kwargs["json"]["explain"] is True
 
     def test_agent_2_node(self):
         state: PipelineState = {
@@ -176,9 +179,9 @@ class TestPipelineNodes:
         }
         res = forecast_charts_node(state)
         chart = res["forecast_charts"]
-        assert "Previsione futura settimanale: 3 settimane" in chart
+        assert "Previsione futura: 3 mesi" in chart
         assert "chronos-bolt-tiny" in chart
-        assert "+1w" in chart
+        assert "+1m" in chart
         assert chart.count("    line [") == 3
         assert "Intervallo di confidenza 80%" in chart
 
@@ -198,9 +201,44 @@ class TestPipelineNodes:
             },
         }
         chart = forecast_charts_node(state)["forecast_charts"]
-        assert "Previsione futura settimanale: 240 settimane" in chart
+        assert "Previsione futura: 240 mesi (20.0 anni)" in chart
         assert "xychart-beta" in chart
         assert chart.count("    line [") >= 3
+
+    def test_xai_temporal_occlusion_report(self):
+        state: PipelineState = {
+            "historical_prices": [100.0 + index for index in range(36)],
+            "tsfm_forecast": {
+                "model": "test-chronos",
+                "status": "ok",
+                "mean": [137.0] * 12,
+                "lower_bound": [120.0] * 12,
+                "upper_bound": [150.0] * 12,
+                "explanation": {
+                    "method": "temporal_occlusion",
+                    "target_horizon_months": 12,
+                    "windows": [
+                        {
+                            "label": "Ultimi 6 mesi",
+                            "trend_pct": 4.0,
+                            "impact_pct_points": 2.5,
+                            "importance_pct": 62.5,
+                        },
+                        {
+                            "label": "Da 7 a 18 mesi fa",
+                            "trend_pct": 9.0,
+                            "impact_pct_points": -1.5,
+                            "importance_pct": 37.5,
+                        },
+                    ],
+                },
+            },
+        }
+        report = explain_forecast_node(state)["xai_analysis"]
+        assert "occlusione temporale" in report
+        assert "Ultimi 6 mesi" in report
+        assert "+2.50 p.p." in report
+        assert "non una relazione causale" in report
 
     def test_join_presenter_node(self):
         state: PipelineState = {

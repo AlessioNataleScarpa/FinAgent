@@ -68,8 +68,7 @@ class ConversationAgent(BaseAgent):
         """Answer from persisted artifacts when the conversational LLM times out."""
         lowered = (latest_user or "").lower()
         header = (
-            f"## Dati salvati per `{isin or analysis.get('isin') or 'N/D'}`\n\n"
-            "_Risposta diretta dalla memoria della pipeline._\n\n"
+            f"## Analisi di `{isin or analysis.get('isin') or 'N/D'}`\n\n"
         )
 
         if re.search(r"previs|forecast|futur|intervall|incertezz|graf", lowered):
@@ -186,14 +185,16 @@ class ConversationAgent(BaseAgent):
         )
 
         system_prompt = (
-            "Sei ConversationAgent, fase conversazionale dopo la pipeline di analisi ETF.\n"
-            "L'utente ha già un report in memoria: rispondi in modo rapido e mirato.\n"
+            "Rispondi come un analista finanziario chiaro e diretto.\n"
+            "L'utente ha già un'analisi in memoria: rispondi in modo rapido e mirato.\n"
             "Priorità delle fonti:\n"
             "1) contesto in memoria (report, grafici, news della pipeline)\n"
             "2) eventuale ricerca web allegata\n"
             "Non inventare numeri assenti. Se i dati web e la memoria divergono, dillo.\n"
             "Rispondi SOLO con Markdown italiano finale leggibile.\n"
             "NON restituire JSON, liste Python, blocchi thinking/reasoning, né metadati.\n"
+            "Non nominare agenti, pipeline, backend, motori di ricerca o dettagli "
+            "tecnici del sistema.\n"
             "Se utile, puoi riproporre blocchi ```mermaid``` già presenti in memoria.\n"
             f"ISIN in focus: {isin or 'N/D'}\n\n"
             f"CONTESTO IN MEMORIA:\n{context}"

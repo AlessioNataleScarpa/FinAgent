@@ -33,9 +33,10 @@ La pipeline in `backend/pipeline/graph.py` esegue una composizione multi-stage:
 
 1. `info_presentazione` → `agent_1` (contesto statico).
 2. `info_andamenti_storici` → `predict` (forecast TSFM zero-shot).
-3. `news` + `predict` → `agent_2` (fusione quantitativa/qualitativa).
-4. `predict` → `forecast_charts` genera viste a 1, 5, 10 e 20 anni con intervallo 80%.
-5. I rami e i grafici convergono in `join_presenter`.
+3. `predict` → spiegazione XAI per occlusione temporale.
+4. `news` + `predict` + XAI → `agent_2` (fusione quantitativa/qualitativa).
+5. `predict` → `forecast_charts` genera viste a 1, 5, 10 e 20 anni con intervallo 80%.
+6. I rami e i grafici convergono in `join_presenter`.
 
 I tre nodi di raccolta partono in parallelo. Lo stato conserva separatamente
 prezzi, date e forecast strutturato (`mean`, `lower_bound`, `upper_bound`), così
@@ -47,6 +48,7 @@ gli array non devono essere ricostruiti dai prompt.
 - `backend/pipeline/news.py`: recupera news reali tramite Yahoo Finance MCP.
 - `backend/pipeline/info_andamenti_storici.py`: recupera OHLCV mensile tramite MCP.
 - `backend/pipeline/predict.py`: invoca un TSFM e genera OUT 2 con intervalli.
+- `backend/pipeline/explain_forecast.py`: rende leggibili le attribuzioni XAI e i fattori di rischio.
 - `backend/pipeline/forecast_charts.py`: mostra forecast centrale, limite inferiore e superiore.
 - `backend/pipeline/agent_1.py`: invoca `PresentationAgent` e produce `agent_1_out1`.
 - `backend/pipeline/agent_2.py`: invoca `TechnicalNewsAgent` e produce `agent_2_out_tech`.
@@ -82,6 +84,8 @@ La configurazione `docker-compose.yml` include:
 - `TSFM_API_TOKEN`: bearer token opzionale.
 - `TSFM_HORIZON`: orizzonte mensile, default `240` (20 anni).
 - `TSFM_HISTORY_PERIOD`: storico richiesto a Yahoo, default `5y`.
+- `COMPOSITION_TIMEOUT_SECONDS`: timeout per ricerca e holdings ufficiali, default `35`.
+- `COMPOSITION_CACHE_TTL_SECONDS`: durata cache composizione, default `21600` (6 ore).
 - `LANGGRAPH_POSTGRES_URI`: URI PostgreSQL opzionale per `AsyncPostgresSaver`.
 
 > Il backend utilizza `langchain-google-genai` e `ChatGoogleGenerativeAI`.
@@ -108,9 +112,25 @@ Il servizio accetta internamente richieste come:
   "series": [101.2, 103.8, 102.4, 104.0, 105.1, 106.3, 105.8, 107.2],
   "frequency": "M",
   "prediction_length": 3,
-  "quantile_levels": [0.1, 0.5, 0.9]
+  "quantile_levels": [0.1, 0.5, 0.9],
+  "explain": true
 }
 ```
+
+Quando `explain` è attivo, Chronos viene rieseguito in batch su tre serie
+controfattuali: ultimi 6 mesi, 7–18 mesi e 19–36 mesi vengono neutralizzati una
+finestra alla volta. La variazione della previsione a 12 mesi misura la
+sensibilità locale del modello. Il report non presenta questa misura come
+causalità di mercato.
+
+### Composizione del portafoglio
+
+I grafici di composizione non usano Yahoo e non hanno valori predefiniti. Il
+backend cerca la pagina dell'emittente e, per i fondi iShares/BlackRock,
+aggrega il file holdings ufficiale per settore, paese e classe di attivo. Se
+non trova una fonte supportata e verificabile, omette il grafico. Quando una
+classe supera il 95%, la torta quasi monocromatica viene sostituita da una nota
+testuale e restano visibili le ripartizioni più informative.
 
 L'endpoint deve rispondere con vettori lunghi quanto `prediction_length`:
 

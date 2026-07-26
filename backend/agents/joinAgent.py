@@ -32,6 +32,7 @@ class JoinAgent(BaseAgent):
         composition_charts: str = "",
         timeline_charts: str = "",
         forecast_charts: str = "",
+        xai_analysis: str = "",
         sentiment_charts: str = "",
     ) -> Tuple[str, str]:
         system_prompt = build_join_system_prompt()
@@ -42,6 +43,7 @@ class JoinAgent(BaseAgent):
             composition_charts=composition_charts,
             timeline_charts=timeline_charts,
             forecast_charts=forecast_charts,
+            xai_analysis=xai_analysis,
             sentiment_charts=sentiment_charts,
         )
         return system_prompt, user_prompt
@@ -55,6 +57,7 @@ class JoinAgent(BaseAgent):
         composition_charts: str = "",
         timeline_charts: str = "",
         forecast_charts: str = "",
+        xai_analysis: str = "",
         sentiment_charts: str = "",
     ) -> str:
         isin_label = isin or "N/D"
@@ -62,22 +65,22 @@ class JoinAgent(BaseAgent):
             f"# Report di analisi ETF\n\n"
             f"**ISIN:** `{isin_label}`\n\n"
             f"## Executive summary\n\n"
-            f"Report generato dalla pipeline LangGraph (presentazione, tecnica/news e grafici Mermaid).\n\n"
+            f"L'analisi riunisce caratteristiche del fondo, composizione, andamento "
+            f"storico, scenario probabilistico e notizie rilevanti. Gli intervalli "
+            f"di previsione rappresentano l'incertezza e vanno considerati insieme "
+            f"alla stima centrale.\n\n"
             f"## Presentazione strumento\n\n"
             f"{out1}\n\n"
             f"{composition_charts}\n\n"
             f"{timeline_charts}\n\n"
             f"{forecast_charts}\n\n"
+            f"{xai_analysis}\n\n"
             f"## Analisi tecnica e confronto news\n\n"
             f"{out_tech}\n\n"
             f"{sentiment_charts}\n\n"
-            f"## Note\n\n"
-            f"Output in Markdown (non JSON). I diagrammi Mermaid sono in blocchi "
-            f"```mermaid``` per il rendering in OpenWebUI.\n\n"
-            f"---\n"
-            f"*Analisi salvata in memoria. Puoi continuare a fare domande qui su "
-            f"`gatewayAgent`: i follow-up usano automaticamente il nodo `conversation` "
-            f"(memoria + eventuale ricerca web).*"
+            f"## Avvertenza\n\n"
+            f"Le stime sono probabilistiche e hanno finalità informative; non "
+            f"costituiscono consulenza finanziaria.\n"
         )
 
     def _parse_and_clean_response(self, res: Any) -> Optional[str]:
@@ -96,6 +99,7 @@ class JoinAgent(BaseAgent):
         composition_charts: str = "",
         timeline_charts: str = "",
         forecast_charts: str = "",
+        xai_analysis: str = "",
         sentiment_charts: str = "",
     ) -> str:
         fallback_kwargs = {
@@ -103,6 +107,7 @@ class JoinAgent(BaseAgent):
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
             "forecast_charts": forecast_charts,
+            "xai_analysis": xai_analysis,
             "sentiment_charts": sentiment_charts,
         }
         if not pipeline_use_llm():
@@ -130,6 +135,7 @@ class JoinAgent(BaseAgent):
         composition_charts: str = "",
         timeline_charts: str = "",
         forecast_charts: str = "",
+        xai_analysis: str = "",
         sentiment_charts: str = "",
     ) -> str:
         fallback_kwargs = {
@@ -137,6 +143,7 @@ class JoinAgent(BaseAgent):
             "composition_charts": composition_charts,
             "timeline_charts": timeline_charts,
             "forecast_charts": forecast_charts,
+            "xai_analysis": xai_analysis,
             "sentiment_charts": sentiment_charts,
         }
         if not pipeline_use_llm():
@@ -151,13 +158,6 @@ class JoinAgent(BaseAgent):
             if content is None:
                 return self._fallback_synthesis(out1, out_tech, **fallback_kwargs)
 
-            footer = (
-                "\n\n---\n"
-                "*Analisi salvata in memoria. Puoi continuare a fare domande qui su "
-                "`gatewayAgent`: i follow-up usano automaticamente il nodo `conversation`.*"
-            )
-            if "Analisi salvata in memoria" not in content:
-                content = content + footer
             return content
         except Exception as e:
             logger.warning("JoinAgent LLM sync generation failed: %s. Falling back.", e)

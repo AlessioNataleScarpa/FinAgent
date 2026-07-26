@@ -7,8 +7,8 @@ Flow:
          ├─ conversation ──────────────────────────────────────────────→ END
          └─ start_analysis
               ├─ info_presentazione → agent_1 → composition_charts ────┐
-              ├─ news ──────────────────────────┐                      │
-              └─ info_andamenti_storici ┬→ predict ┴→ agent_2 → sentiment_charts
+              ├─ news ────────────────────────────────────────┐       │
+              └─ info_andamenti_storici ┬→ predict → XAI ─────┴→ agent_2 → sentiment_charts
                                         └→ timeline_charts ────────────┼→ join_presenter → save_memory → END
 """
 
@@ -22,6 +22,7 @@ from .agent_1 import generate_agent_1_out
 from .agent_2 import generate_agent_2_out
 from .composition_charts import composition_charts_node
 from .conversation import conversation_node
+from .explain_forecast import explain_forecast_node
 from .forecast_charts import forecast_charts_node
 from .info_andamenti_storici import fetch_info_andamenti_storici
 from .info_presentazione import fetch_info_presentazione
@@ -63,6 +64,7 @@ builder.add_node("info_andamenti_storici", fetch_info_andamenti_storici)
 builder.add_node("predict", predict_node)
 builder.add_node("timeline_charts", timeline_charts_node)
 builder.add_node("forecast_charts", forecast_charts_node)
+builder.add_node("explain_forecast", explain_forecast_node)
 builder.add_node("agent_2", generate_agent_2_out)
 builder.add_node("sentiment_charts", sentiment_charts_node)
 builder.add_node("join_presenter", join_presenter_node)
@@ -92,17 +94,25 @@ builder.add_edge("agent_1", "composition_charts")
 builder.add_edge("info_andamenti_storici", "predict")
 builder.add_edge("info_andamenti_storici", "timeline_charts")
 builder.add_edge("predict", "forecast_charts")
+builder.add_edge("predict", "explain_forecast")
 
 # Technical branch
 builder.add_edge("news", "agent_2")
-builder.add_edge("predict", "agent_2")
+builder.add_edge("explain_forecast", "agent_2")
 builder.add_edge("agent_2", "sentiment_charts")
 
-# Join waits for all chart/analysis modules
-builder.add_edge("composition_charts", "join_presenter")
-builder.add_edge("timeline_charts", "join_presenter")
-builder.add_edge("forecast_charts", "join_presenter")
-builder.add_edge("sentiment_charts", "join_presenter")
+# A list edge is an explicit barrier: synthesis starts only when every branch
+# has completed, including the explanation and news/sentiment paths.
+builder.add_edge(
+    [
+        "composition_charts",
+        "timeline_charts",
+        "forecast_charts",
+        "explain_forecast",
+        "sentiment_charts",
+    ],
+    "join_presenter",
+)
 
 # Persist memory then end
 builder.add_edge("join_presenter", "save_memory")

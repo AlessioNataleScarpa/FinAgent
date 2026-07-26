@@ -64,9 +64,6 @@ def _extract_asset_allocation(info: Dict[str, Any]) -> Dict[str, float]:
                     weights[str(key)] = round(numeric, 2)
             except (TypeError, ValueError):
                 continue
-    quote_type = str(info.get("quoteType") or info.get("typeDisp") or "").upper()
-    if not weights and ("ETF" in quote_type or "FUND" in quote_type or info.get("longBusinessSummary")):
-        weights = {"Azioni / Equity": 98.0, "Liquidita / Altro": 2.0}
     return weights
 
 

@@ -30,7 +30,7 @@ def search_web(query: str, *, max_results: int = 5) -> str:
         logger.warning("Web search failed for %r: %s", q, exc)
         return ""
 
-    lines: List[str] = [f"### Risultati web per: {q}"]
+    lines: List[str] = [f"### Informazioni recenti su: {q}"]
 
     abstract = (data.get("AbstractText") or "").strip()
     abstract_url = (data.get("AbstractURL") or "").strip()

@@ -22,6 +22,9 @@ def generate_agent_2_out(state: PipelineState) -> Dict[str, Any]:
     to generate technical analysis and news comparison with Mermaid charts.
     """
     prediction = state.get("prediction_out2", "No prediction available.")
+    explanation = state.get("xai_analysis", "")
+    if explanation:
+        prediction = f"{prediction}\n\n{explanation}"
     news = state.get("news_data", "No news data available.")
     isin = state.get("isin", "N/A")
 

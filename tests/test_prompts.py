@@ -23,7 +23,7 @@ def test_build_presentation_agent_prompt():
     assert isin in prompt
     assert info in prompt
     assert "Agent 1" in prompt
-    assert "pie title" in prompt
+    assert "non stimare percentuali" in prompt
 
 
 def test_build_technical_news_agent_prompt():
@@ -37,5 +37,4 @@ def test_build_technical_news_agent_prompt():
     assert news in prompt
     assert "Agent 2" in prompt
     assert "graph LR" in prompt
-
 

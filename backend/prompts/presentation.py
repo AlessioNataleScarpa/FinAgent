@@ -6,9 +6,9 @@ def build_presentation_agent_prompt(isin: str, info_presentazione: str) -> str:
         f"PRESENTATION INFO:\n{info_presentazione}\n\n"
         f"Output structured fields:\n"
         f"- summary: Overall summary of the ETF in Italian Markdown prose (no JSON).\n"
-        f"- asset_allocation: Asset class breakdown description.\n"
-        f"- sector_breakdown: List of sector exposures.\n"
-        f"- regional_breakdown: List of geographic exposures.\n"
-        f"- mermaid_chart: Valid Mermaid pie chart body only (start with 'pie title ...', no fences).\n"
+        f"- asset_allocation, sector_breakdown, regional_breakdown: usa solo dati "
+        f"espliciti presenti in Composition; non stimare percentuali mancanti.\n"
+        f"- mermaid_chart: lascia vuoto; i grafici sono costruiti separatamente "
+        f"dalle posizioni ufficiali.\n"
         f"Do not wrap the whole answer as JSON in a code fence; use the structured schema fields.\n"
     )

@@ -118,6 +118,7 @@ def _remote_tsfm_forecast(prices: List[float], horizon: int) -> TSFMForecast:
         "frequency": "M",
         "prediction_length": horizon,
         "quantile_levels": [0.1, 0.5, 0.9],
+        "explain": True,
     }
     headers = {"Content-Type": "application/json"}
     token = os.getenv("TSFM_API_TOKEN", "").strip()
@@ -154,7 +155,7 @@ def _remote_tsfm_forecast(prices: List[float], horizon: int) -> TSFMForecast:
             "Risposta TSFM non valida: servono mean, lower_bound e upper_bound"
         )
 
-    return {
+    result: TSFMForecast = {
         "model": str(data.get("model") or model),
         "frequency": "monthly",
         "horizon": horizon,
@@ -164,6 +165,10 @@ def _remote_tsfm_forecast(prices: List[float], horizon: int) -> TSFMForecast:
         "upper_bound": upper,
         "status": "ok",
     }
+    explanation = data.get("explanation")
+    if isinstance(explanation, dict):
+        result["explanation"] = explanation
+    return result
 
 
 def _statistical_fallback(
@@ -211,7 +216,7 @@ def _statistical_fallback(
         lower.append(round(center * math.exp(-uncertainty), 4))
         upper.append(round(center * math.exp(uncertainty), 4))
 
-    return {
+    result: TSFMForecast = {
         "model": "robust-damped-trend-fallback",
         "frequency": "monthly",
         "horizon": horizon,
@@ -222,6 +227,18 @@ def _statistical_fallback(
         "status": "fallback",
         "error": error,
     }
+    result["explanation"] = {
+        "method": "analytical_fallback",
+        "model_agnostic": False,
+        "target_horizon_months": min(12, horizon),
+        "median_monthly_return_pct": round((math.exp(drift) - 1.0) * 100.0, 4),
+        "monthly_volatility_pct": round(volatility * 100.0, 4),
+        "interpretation": (
+            "Lo scenario centrale dipende dal rendimento mediano recente, smorzato "
+            "nel tempo; l'ampiezza dell'intervallo dipende dalla volatilità."
+        ),
+    }
+    return result
 
 
 def _legacy_direction(raw: str) -> str:
@@ -274,18 +291,18 @@ def _render_forecast(
             )
         expected = f"{directional_return:+.2f}% a 12 mesi"
     else:
-        direction = _legacy_direction(legacy_raw)
+        direction = "UNAVAILABLE"
         expected = "non disponibile"
 
     status = forecast.get("status", "unavailable")
     warning = ""
     if status == "fallback":
         warning = (
-            "\nATTENZIONE: il TSFM non era raggiungibile; risultato prodotto dal "
-            "fallback statistico, non da un Foundation Model."
+            "\nIl modello principale non era raggiungibile: lo scenario usa una "
+            "stima statistica di riserva e va considerato esplorativo."
         )
     elif status == "unavailable":
-        warning = f"\nPREVISIONE NON DISPONIBILE: {forecast.get('error', '')}"
+        warning = f"\nPrevisione non disponibile: {forecast.get('error', '')}"
 
     table = ""
     if horizon_rows:
@@ -295,18 +312,28 @@ def _render_forecast(
             + "\n".join(horizon_rows)
             + "\n"
         )
+    status_label = {
+        "ok": "modello disponibile",
+        "fallback": "stima statistica di riserva",
+        "unavailable": "non disponibile",
+    }.get(status, status)
+    direction_label = {
+        "BULLISH": "rialzista",
+        "BEARISH": "ribassista",
+        "NEUTRAL": "laterale",
+        "UNAVAILABLE": "non disponibile",
+    }.get(direction, direction.lower())
     return (
-        "--- TSFM FORECAST OUTPUT (OUT 2) ---\n"
-        f"Target ISIN: {isin}\n"
-        f"Model: {forecast.get('model', 'N/A')}\n"
-        f"Backend status: {status}\n"
-        f"Context observations: {len(prices)}\n"
-        f"Forecast horizon: {forecast.get('horizon', 0)} months\n"
-        f"Trend Direction (12 months): {direction}\n"
-        f"Projected return: {expected}\n"
+        f"### Scenario quantitativo per `{isin}`\n\n"
+        f"La traiettoria a 12 mesi è **{direction_label}** ({expected}). "
+        f"La stima usa **{len(prices)} osservazioni mensili** e copre "
+        f"**{forecast.get('horizon', 0)} mesi**.\n\n"
+        f"- Modello: `{forecast.get('model', 'N/D')}`\n"
+        f"- Stato: {status_label}\n"
         f"{table}"
-        "Interpretation rule: a wide interval means high uncertainty; do not "
-        "let news sentiment turn it into a high-confidence directional claim.\n"
+        "L'intervallo va letto insieme allo scenario centrale: quando si allarga, "
+        "la direzione prevista è meno affidabile e le notizie non bastano a "
+        "trasformarla in un segnale forte.\n"
         f"{warning}\n"
     )
 

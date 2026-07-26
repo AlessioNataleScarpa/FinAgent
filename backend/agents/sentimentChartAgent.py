@@ -64,7 +64,8 @@ class SentimentChartAgent(BaseAgent):
 
         return (
             f"## Sentiment e impatto news\n\n"
-            f"Sintesi visuale dell'agente **SentimentChartAgent**.\n\n"
+            f"Il grafico riassume il tono delle informazioni considerate e il "
+            f"loro rapporto con lo scenario quantitativo.\n\n"
             f"### Distribuzione sentiment\n\n"
             f"{wrap_mermaid(pie)}\n\n"
             f"### Catena di impatto\n\n"

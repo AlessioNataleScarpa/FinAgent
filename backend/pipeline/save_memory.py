@@ -33,6 +33,7 @@ def save_memory_node(state: PipelineState) -> Dict[str, Any]:
         composition_charts=state.get("composition_charts") or "",
         timeline_charts=state.get("timeline_charts") or "",
         forecast_charts=state.get("forecast_charts") or "",
+        xai_analysis=state.get("xai_analysis") or "",
         sentiment_charts=state.get("sentiment_charts") or "",
         info_presentazione=state.get("info_presentazione") or "",
         info_storici=state.get("info_storici") or "",

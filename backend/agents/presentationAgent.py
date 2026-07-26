@@ -76,8 +76,6 @@ class PresentationAgent(BaseAgent):
             "",
             "### Descrizione",
             description,
-            "",
-            "_I grafici di composizione sono generati dal nodo `composition_charts`._",
         ]
         return AwaitableString("\n".join(lines))
 
@@ -124,18 +122,12 @@ class PresentationAgent(BaseAgent):
             if data is None:
                 raise ValueError("Unexpected response type from structured LLM")
 
-            sectors = ", ".join(data.sector_breakdown) if isinstance(data.sector_breakdown, list) else data.sector_breakdown
-            regions = ", ".join(data.regional_breakdown) if isinstance(data.regional_breakdown, list) else data.regional_breakdown
-            chart = self._format_mermaid(data.mermaid_chart, f"pie title Allocazione ISIN {isin}")
             return AwaitableString(
                 f"# Presentazione strumento\n\n"
                 f"**ISIN Analizzato:** `{isin}`\n\n"
                 f"### Dettagli Fondamentali\n{data.summary}\n\n"
-                f"### Allocazione Asset\n{data.asset_allocation}\n\n"
-                f"### Ripartizione Settoriale\n{sectors}\n\n"
-                f"### Ripartizione Geografica\n{regions}\n\n"
-                f"### Struttura e Allocazione\n\n"
-                f"```mermaid\n{chart}\n```\n"
+                "La composizione è riportata separatamente usando esclusivamente "
+                "le posizioni pubblicate dall'emittente.\n"
             )
         except Exception as e:
             logger.warning("PresentationAgent LLM failed: %s. Using deterministic markdown.", e)

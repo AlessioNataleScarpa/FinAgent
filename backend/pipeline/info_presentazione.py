@@ -6,6 +6,7 @@ Fetches metadata and presentation info for an ISIN / ETF.
 import logging
 from typing import Dict, Any
 from .state import PipelineState
+from api.composition_search import get_fund_composition
 from api.openfigi import get_best_ticker
 from api.yahoo_data import get_profile
 
@@ -28,15 +29,19 @@ def fetch_info_presentazione(state: PipelineState) -> Dict[str, Any]:
 
     logger.info(f"Ticker convertito: {ticker}")
     
-    # Recupera il profilo tramite FMP
+    # Il profilo generale e la composizione usano percorsi distinti. In
+    # particolare, la composizione non dipende da Yahoo: viene cercata sul web
+    # e ricostruita dalle posizioni pubblicate dall'emittente.
     profile_data = get_profile(ticker)
+    composition_data = get_fund_composition(isin)
     
     # Convertiamo i dati in una stringa JSON formattata per passarla nello state
     import json
     info_str = json.dumps({
         "ISIN": isin,
         "Ticker": ticker,
-        "Profile": profile_data
+        "Profile": profile_data,
+        "Composition": composition_data,
     }, indent=2)
 
     return {"info_presentazione": info_str}
