@@ -61,7 +61,6 @@ def get_best_ticker(isin: str, preferred_exchange: str = "L", api_key: Optional[
 
     results = isin_to_ticker(key, api_key)
     if not results:
-        _TICKER_CACHE[key] = None
         return None
 
     preferred = list(

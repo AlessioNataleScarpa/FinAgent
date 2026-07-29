@@ -64,6 +64,7 @@ def _extract_asset_allocation(info: Dict[str, Any]) -> Dict[str, float]:
                     weights[str(key)] = round(numeric, 2)
             except (TypeError, ValueError):
                 continue
+
     return weights
 
 
@@ -107,6 +108,12 @@ def get_historical_data(ticker: str, period: str = "1y") -> Dict[str, Any]:
             return {"error": "Historical data not found"}
 
         hist = hist.copy()
+        hist.dropna(subset=["Close"], inplace=True)
+        hist = hist[hist["Close"] > 0]
+        
+        if hist.empty:
+            return {"error": "Historical data not found or invalid"}
+
         hist.reset_index(inplace=True)
         hist["Date"] = hist["Date"].astype(str)
 
