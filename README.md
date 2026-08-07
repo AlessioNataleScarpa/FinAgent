@@ -205,9 +205,26 @@ Dipendenze Python principali in `requirements.txt`:
 3. Registra l'agente in `backend/agents/registry.py`.
 4. Aggiungi prompt dedicati in `backend/prompts/` se necessario.
 
+## Report e valutazione
+
+Il report LaTeX è in `report_progetto.tex` (PDF: `report_progetto.pdf`).
+
+Artefatti sperimentali:
+- `report/figures/` — heatmap, confusion matrix, ablation temperatura, metriche
+- `report/results/` — CSV/JSON dei test (`summary.json`)
+- `scripts/eval_suite.py` — suite riproducibile (routing, Mermaid, ISIN, schema, LLM)
+
+```bash
+python -u scripts/eval_suite.py --llm-limit 20
+# solo offline (senza API):
+python -u scripts/eval_suite.py --skip-llm
+pdflatex report_progetto.tex
+```
+
 ## Stato corrente
 
 - Architettura agent-based con pipeline multi-stage.
 - Output testuali e Mermaid markdown per visualizzare grafici e analisi.
 - Il gateway gestisce la classificazione dell'intento, l'estrazione ISIN e l'invocazione della pipeline.
+- Valutazione quantitativa versionata nel report (routing, Mermaid, router LLM).
 - La pipeline è pronta per integrazioni più profonde con dati reali e modelli LLM.
