@@ -12,3 +12,4 @@ httpx
 python-dotenv
 yfinance
 mcp
+transformers

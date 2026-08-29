@@ -4,12 +4,14 @@ from typing import List, Optional, Union
 
 try:
     from agents.base import AwaitableString, BaseAgent
+    from models.sentiment import analyze_sentiment
     from prompts.technical_news import build_technical_news_agent_prompt
     from schemas.chat import Message
     from schemas.technical_news import TechnicalNewsOutputSchema
     from utils.flags import pipeline_use_llm
 except ImportError:
     from backend.agents.base import AwaitableString, BaseAgent
+    from backend.models.sentiment import analyze_sentiment
     from backend.prompts.technical_news import build_technical_news_agent_prompt
     from backend.schemas.chat import Message
     from backend.schemas.technical_news import TechnicalNewsOutputSchema
@@ -80,6 +82,13 @@ class TechnicalNewsAgent(BaseAgent):
                 "di previsione: range ampio significa bassa confidenza.\n"
             )
 
+        sentiment_res = analyze_sentiment(news)
+        sentiment_note = (
+            f"- **Sentiment Notizie ({sentiment_res.method}):** **{sentiment_res.label}** "
+            f"(Indice di polarità: `{sentiment_res.polarity_index:+.2f}`, "
+            f"Confidenza: `{sentiment_res.confidence * 100:.1f}%`)\n"
+        )
+
         return AwaitableString(
             f"# Analisi tecnica e confronto news\n\n"
             f"**ISIN:** `{isin}`\n\n"
@@ -88,6 +97,7 @@ class TechnicalNewsAgent(BaseAgent):
             f"### Notizie di mercato\n"
             f"{news_markdown}\n\n"
             f"### Impatto delle news sulla previsione\n"
+            f"{sentiment_note}"
             f"{uncertainty}"
             f"- Le news macro e gli utili influenzano il bias di breve/medio termine.\n"
             f"- I rischi geopolitici restano un fattore di volatilità.\n"

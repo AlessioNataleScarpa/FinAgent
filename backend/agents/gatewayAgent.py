@@ -13,12 +13,14 @@ try:
     from prompts import build_gateway_system_prompt
     from schemas.chat import Message
     from schemas.routing import RouterIntentSchema
+    from utils.isin import ISINValidator, extract_valid_isin, validate_isin
 except ImportError:
     from backend.agents.base import BaseAgent
     from backend.memory.store import get_memory_store
     from backend.prompts import build_gateway_system_prompt
     from backend.schemas.chat import Message
     from backend.schemas.routing import RouterIntentSchema
+    from backend.utils.isin import ISINValidator, extract_valid_isin, validate_isin
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +75,7 @@ class GatewayAgent(BaseAgent):
 
     @staticmethod
     def _extract_isin_fallback(text: str) -> Optional[str]:
-        match = ISIN_PATTERN.search(text or "")
-        return match.group(1).upper() if match else None
+        return extract_valid_isin(text or "")
 
     def _extract_isin_from_history(self, messages: List[Message]) -> Optional[str]:
         for message in reversed(messages):
@@ -179,8 +180,17 @@ class GatewayAgent(BaseAgent):
         latest_user_message = self.extract_latest_user_message(messages)
         store = get_memory_store()
 
-        # ISIN written in THIS user message (highest priority).
-        isin_in_latest = self._extract_isin_fallback(latest_user_message)
+        # ISIN written in THIS user message (highest priority with formal ISO 6166 validation).
+        valid_isin_in_latest, invalid_isin_audit = ISINValidator.inspect_query_isin(latest_user_message)
+        if invalid_isin_audit and not valid_isin_in_latest:
+            logger.info("Gateway: rejected invalid ISIN candidate %s", invalid_isin_audit.isin)
+            return (
+                f"Il codice `{invalid_isin_audit.isin}` presenta un formato compatibile ma "
+                f"non supera la verifica formale **ISO 6166** ({invalid_isin_audit.error_message}).\n\n"
+                "Verifica il codice ISIN e riprova (es. `IE00B4L5Y983`)."
+            )
+
+        isin_in_latest = valid_isin_in_latest
         isin = isin_in_latest or self._extract_isin_from_history(messages)
 
         memory = store.get(isin) if isin else store.get_latest()

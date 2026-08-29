@@ -2,6 +2,11 @@ import logging
 import httpx
 from typing import Optional, List, Dict, Any
 
+try:
+    from utils.isin import validate_isin
+except ImportError:
+    from backend.utils.isin import validate_isin
+
 logger = logging.getLogger(__name__)
 
 # Avoid duplicate OpenFIGI calls across parallel LangGraph branches.
@@ -19,8 +24,13 @@ def isin_to_ticker(isin: str, api_key: Optional[str] = None) -> List[Dict[str, A
         Una lista di dizionari con i risultati del mapping.
         Esempio: [{'figi': '...', 'name': 'APPLE INC', 'ticker': 'AAPL', 'exchCode': 'US', ...}]
     """
+    key = (isin or "").strip().upper()
+    if not validate_isin(key):
+        logger.debug("OpenFIGI: ISIN non conforme ISO 6166: %s", key)
+        return []
+
     url = "https://api.openfigi.com/v3/mapping"
-    payload = [{"idType": "ID_ISIN", "idValue": isin}]
+    payload = [{"idType": "ID_ISIN", "idValue": key}]
     headers = {'Content-Type': 'application/json'}
     
     if api_key:

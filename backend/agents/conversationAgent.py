@@ -12,15 +12,16 @@ try:
     from api.web_search import search_web
     from memory.store import get_memory_store
     from schemas.chat import Message
+    from utils.isin import extract_valid_isin
 except ImportError:
     from backend.agents.base import BaseAgent
     from backend.api.web_search import search_web
     from backend.memory.store import get_memory_store
     from backend.schemas.chat import Message
+    from backend.utils.isin import extract_valid_isin
 
 logger = logging.getLogger(__name__)
 
-ISIN_PATTERN = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b", re.IGNORECASE)
 NEEDS_WEB = re.compile(
     r"\b(notizie|news|oggi|recente|mercato|nvidia|apple|microsoft|tesla|"
     r"cerca|web|aggiorn|ultime|impatto|esce|lascia|rimuov)\b",
@@ -35,8 +36,7 @@ class ConversationAgent(BaseAgent):
 
     @staticmethod
     def _extract_isin(text: str) -> Optional[str]:
-        match = ISIN_PATTERN.search(text or "")
-        return match.group(1).upper() if match else None
+        return extract_valid_isin(text or "")
 
     def _resolve_memory(
         self,
