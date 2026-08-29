@@ -6,6 +6,11 @@ import math
 import statistics
 from typing import Any, Dict, List
 
+try:
+    from models.explainability import get_xai_service
+except ImportError:
+    from backend.models.explainability import get_xai_service
+
 from .state import PipelineState
 
 
@@ -112,31 +117,60 @@ def explain_forecast_node(state: PipelineState) -> Dict[str, Any]:
         for value in state.get("historical_prices") or []
         if isinstance(value, (int, float)) and float(value) > 0
     ]
+    dates = state.get("historical_dates") or []
+    mean_forecast = [float(v) for v in forecast.get("mean") or [] if isinstance(v, (int, float))]
     explanation = forecast.get("explanation") or {}
     status = forecast.get("status")
 
+    # Run game-theoretic Temporal KernelSHAP attribution
+    xai_service = get_xai_service()
+    xai_result = xai_service.explain_tsfm_forecast(
+        context_prices=prices,
+        forecast_mean=mean_forecast,
+        context_dates=dates,
+    )
+
     sections = ["## Perché il modello produce questo scenario\n\n"]
-    method = explanation.get("method")
-    if method == "temporal_occlusion":
-        sections.append(_occlusion_markdown(explanation))
-    elif method == "analytical_fallback":
-        sections.append(_fallback_markdown(explanation))
-    elif status == "unavailable":
+
+    if xai_result.is_valid and xai_result.attributions:
         sections.append(
-            "Non ci sono dati sufficienti per attribuire la previsione a fattori "
-            "specifici.\n"
+            "La spiegazione applica la **teoria dei giochi cooperativi (KernelSHAP per serie temporali)**. "
+            "Il modello calcola il contributo causale marginale (valore di Shapley $\\phi_j$) di ciascuna "
+            "macro-finestra storica sul rendimento futuro stimato a 12 mesi.\n\n"
+        )
+        sections.append(xai_result.markdown_table)
+        sections.append(
+            f"\n\nLa finestra con maggiore impatto causale è **{xai_result.most_influential_window}**, "
+            "che definisce la direzione primaria della traiettoria quantilica.\n"
         )
     else:
-        sections.append(
-            "L'endpoint di previsione non ha restituito le prove controfattuali "
-            "necessarie per un'attribuzione locale. Sono quindi riportati solo i "
-            "fattori di rischio osservabili, senza inventare importanze del modello.\n"
-        )
+        method = explanation.get("method")
+        if method == "temporal_occlusion":
+            sections.append(_occlusion_markdown(explanation))
+        elif method == "analytical_fallback":
+            sections.append(_fallback_markdown(explanation))
+        elif status == "unavailable":
+            sections.append(
+                "Non ci sono dati sufficienti per attribuire la previsione a fattori "
+                "specifici.\n"
+            )
+        else:
+            sections.append(
+                "L'endpoint di previsione non ha restituito le prove controfattuali "
+                "necessarie per un'attribuzione locale. Sono quindi riportati solo i "
+                "fattori di rischio osservabili, senza inventare importanze del modello.\n"
+            )
 
     if prices:
         sections.extend(["\n### Rischio e affidabilità\n\n", _risk_context(prices, forecast), "\n"])
+
     sections.append(
-        "\nLa spiegazione descrive la sensibilità del modello allo storico disponibile; "
+        "\n> [!NOTE]\n"
+        "> La spiegazione descrive la sensibilità del modello allo storico disponibile; "
         "non dimostra che quei periodi siano la causa dei movimenti futuri.\n"
     )
-    return {"xai_analysis": "".join(sections)}
+
+    return {
+        "xai_analysis": "".join(sections),
+        "xai_attribution": xai_result.model_dump() if hasattr(xai_result, "model_dump") else xai_result.dict(),
+    }
