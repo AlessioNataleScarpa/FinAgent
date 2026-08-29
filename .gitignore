@@ -220,3 +220,8 @@ __marimo__/
 # ETF analysis memory
 backend/data/etf_memory.json
 
+# Reports, LaTeX artifacts and temporary backups
+report/
+report_progetto*
+pre_filter_hashes.csv
+.git_backup_pre_filter/
